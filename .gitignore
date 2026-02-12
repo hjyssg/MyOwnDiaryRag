@@ -43,3 +43,5 @@ wheels/
 # OS
 .DS_Store
 Thumbs.db
+scripts/import_diary_to_db.py
+scripts/yearly_word_stats.png
