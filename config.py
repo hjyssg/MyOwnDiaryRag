@@ -36,6 +36,7 @@ def get_config():
     
     diary_base_path = env.get('DIARY_BASE_PATH')
     database_path = env.get('DATABASE_PATH')
+    lm_studio_url = env.get('LM_STUDIO_URL', 'http://127.0.0.1:1234/v1/chat/completions')
     
     if not diary_base_path:
         raise ValueError("DIARY_BASE_PATH 未在 .env 中配置")
@@ -50,5 +51,6 @@ def get_config():
     
     return {
         'diary_base_path': diary_base_path,
-        'database_path': database_path
+        'database_path': database_path,
+        'lm_studio_url': lm_studio_url
     }
