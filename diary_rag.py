@@ -19,20 +19,28 @@ if sys.platform == 'win32':
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 
-# LM Studio 配置
-LM_STUDIO_URL = "http://127.0.0.1:1234/v1/chat/completions"
-
-# 数据库路径将从配置加载
+# 配置将从 .env 加载
 DB_PATH = None
+LM_STUDIO_URL = None
 
-def get_db_path():
-    """获取数据库路径"""
-    global DB_PATH
-    if DB_PATH is None:
+def get_config_value(key):
+    """获取配置值"""
+    global DB_PATH, LM_STUDIO_URL
+    if DB_PATH is None or LM_STUDIO_URL is None:
         from config import get_config
         config = get_config()
         DB_PATH = config['database_path']
-    return DB_PATH
+        LM_STUDIO_URL = config['lm_studio_url']
+    
+    if key == 'database_path':
+        return DB_PATH
+    elif key == 'lm_studio_url':
+        return LM_STUDIO_URL
+    return None
+
+def get_db_path():
+    """获取数据库路径"""
+    return get_config_value('database_path')
 
 # 问答 prompt
 QA_PROMPT = """你是一个私人日记助手。根据以下日记内容回答用户的问题。
@@ -51,17 +59,18 @@ QA_PROMPT = """你是一个私人日记助手。根据以下日记内容回答�
 请回答："""
 
 
-def call_llm(prompt, max_tokens=800):
+def call_llm(prompt, max_tokens=800, temperature=0.5):
     """调用 LM Studio 的 OpenAI 兼容 API"""
+    url = get_config_value('lm_studio_url')
     payload = json.dumps({
         "messages": [{"role": "user", "content": prompt}],
         "max_tokens": max_tokens,
-        "temperature": 0.5,
+        "temperature": temperature,
         "stream": False
     }).encode('utf-8')
 
     req = Request(
-        LM_STUDIO_URL,
+        url,
         data=payload,
         headers={"Content-Type": "application/json"}
     )
@@ -74,6 +83,34 @@ def call_llm(prompt, max_tokens=800):
         return f"[错误] LM Studio 连接失败: {e}"
     except Exception as e:
         return f"[错误] API 调用出错: {e}"
+
+
+# 分词 prompt
+TOKENIZE_PROMPT = """请从以下问题中提取关键词，用于搜索日记。
+只输出关键词，用空格分隔，不要输出其他内容。
+关键词应该是名词、动词、地名、人名等实体词，忽略"的、了、吗、呢"等虚词。
+
+问题：{question}
+
+关键词："""
+
+
+def extract_keywords_with_llm(question):
+    """使用 LLM 提取关键词"""
+    prompt = TOKENIZE_PROMPT.format(question=question)
+    try:
+        result = call_llm(prompt, max_tokens=50, temperature=0.1)
+        # 清理结果，提取关键词
+        # 处理可能的逗号、顿号等分隔符
+        result = result.replace('，', ' ').replace('、', ' ').replace(',', ' ')
+        keywords = result.strip().split()
+        # 过滤掉可能的标点符号和空白
+        keywords = [k.strip('，。！？、；：""''（）《》【】') for k in keywords]
+        keywords = [k for k in keywords if k and len(k) > 0]
+        return keywords[:8]  # 最多返回8个关键词
+    except Exception as e:
+        print(f"[警告] LLM 分词失败: {e}，使用简单分词")
+        return None
 
 
 def extract_year_range(question):
@@ -109,16 +146,42 @@ def search_diaries(conn, question, year_range=None, entry_types=None, limit=30):
     混合检索：FTS5 搜索摘要和原文
     返回: [(id, date, content, summary, entry_type, rank), ...]
     """
-    # 构建 FTS5 查询
-    # 简单处理：提取关键词（去除常见停用词）
-    stopwords = {'的', '了', '在', '是', '我', '有', '和', '就', '不', '人', '都', '一', '一个', '上', '也', '很', '到', '说', '要', '去', '你', '会', '着', '没有', '看', '好', '自己', '这'}
-    keywords = [w for w in question if len(w) > 1 and w not in stopwords]
+    # 使用 LLM 提取关键词
+    print("[分词]", end="", flush=True)
+    keywords = extract_keywords_with_llm(question)
     
-    # 如果没有提取到关键词，用原问题
+    # 如果 LLM 分词失败，使用简单分词作为后备
+    if not keywords:
+        stopwords = {'的', '了', '在', '是', '我', '有', '和', '就', '不', '人', '都', '一', '一个', '上', '也', '很', '到', '说', '要', '去', '你', '会', '着', '没有', '看', '好', '自己', '这', '吗', '呢', '啊', '吧'}
+        
+        # 简单分词：提取2-4字的词组
+        keywords = []
+        for length in [4, 3, 2]:
+            for i in range(len(question) - length + 1):
+                word = question[i:i+length]
+                if word not in stopwords and not any(c in stopwords for c in word):
+                    keywords.append(word)
+        
+        # 如果没有提取到关键词，提取单字（排除停用词）
+        if not keywords:
+            keywords = [c for c in question if c not in stopwords and len(c.strip()) > 0]
+        
+        # 去重并保持顺序
+        seen = set()
+        unique_keywords = []
+        for k in keywords:
+            if k not in seen:
+                seen.add(k)
+                unique_keywords.append(k)
+        keywords = unique_keywords[:8]
+    
+    # 构建搜索查询
     if not keywords:
         search_query = question
     else:
-        search_query = ' '.join(keywords[:5])  # 最多取5个关键词
+        search_query = ' '.join(keywords)
+    
+    print(f" [{search_query}]", end="", flush=True)
     
     # 构建 SQL
     sql = """
@@ -195,6 +258,29 @@ def format_context(results, top_summaries=10, top_full=3):
     return summaries_text.strip(), full_entries_text.strip()
 
 
+def is_broad_question(question):
+    """判断是否是宽泛的问题（需要浏览大量摘要）"""
+    broad_patterns = [
+        r'去了哪里', r'去过哪', r'做了什么', r'发生了什么',
+        r'有什么.*事', r'都.*了', r'总结', r'回顾'
+    ]
+    return any(re.search(pattern, question) for pattern in broad_patterns)
+
+
+def get_year_summaries(conn, year_range, limit=100):
+    """获取指定年份的所有摘要"""
+    sql = """
+        SELECT date, summary, entry_type
+        FROM diary_entries
+        WHERE year >= ? AND year <= ?
+        AND summary IS NOT NULL
+        ORDER BY date
+        LIMIT ?
+    """
+    cursor = conn.execute(sql, [year_range[0], year_range[1], limit])
+    return cursor.fetchall()
+
+
 def answer_question(conn, question):
     """回答用户问题"""
     print(f"\n[检索] 检索中...", end="", flush=True)
@@ -204,11 +290,48 @@ def answer_question(conn, question):
     if year_range:
         print(f" [年份: {year_range[0]}-{year_range[1]}]", end="", flush=True)
     
-    # 检索
+    # 判断是否是宽泛问题
+    if year_range and is_broad_question(question):
+        print(" [宽泛问题，浏览摘要]", end="", flush=True)
+        
+        # 获取该年份的所有摘要
+        year_summaries = get_year_summaries(conn, year_range, limit=200)
+        
+        if not year_summaries:
+            print(f"\n\n[提示] {year_range[0]}年没有日记")
+            return
+        
+        print(f" 找到 {len(year_summaries)} 条日记\n")
+        
+        # 组装摘要文本
+        summaries_text = ""
+        for date, summary, entry_type in year_summaries:
+            summaries_text += f"{date} ({entry_type}): {summary}\n"
+        
+        # 构建 prompt
+        prompt = f"""你是一个私人日记助手。根据以下日记摘要回答用户的问题。
+只基于提供的摘要回答，不要编造信息。
+
+## {year_range[0]}年日记摘要
+{summaries_text}
+
+## 用户问题
+{question}
+
+请回答："""
+        
+        # 调用 LLM
+        print("[思考] 思考中...\n")
+        answer = call_llm(prompt, max_tokens=1000)
+        
+        print(f"[回答] {answer}\n")
+        return
+    
+    # 常规关键词检索
     results = search_diaries(conn, question, year_range=year_range, limit=30)
     
     if not results:
-        print(f"\n\n[错误] 没有找到相关日记")
+        print(f"\n\n[提示] 没有找到相关日记")
         return
     
     print(f" 找到 {len(results)} 条相关日记\n")
