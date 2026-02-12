@@ -68,7 +68,7 @@ diary_folder/
 ### 1. 导入日记到数据库
 
 ```bash
-python import_diary_to_db.py
+python scripts/import_diary_to_db.py
 ```
 
 这将扫描日记文件夹，智能识别文件类型，并导入到 SQLite 数据库。
@@ -79,18 +79,18 @@ python import_diary_to_db.py
 
 抽样测试（测试 10 条）：
 ```bash
-python build_summaries.py --test
+python scripts/build_summaries.py --test
 ```
 
 全量生成：
 ```bash
-python build_summaries.py --all
+python scripts/build_summaries.py --all
 ```
 
 ### 3. 智能问答
 
 ```bash
-python diary_rag.py
+python scripts/diary_rag.py
 ```
 
 交互式问答示例：
@@ -103,7 +103,13 @@ python diary_rag.py
 ### 4. 年度统计
 
 ```bash
-python yearly_stats.py
+python scripts/yearly_stats.py
+```
+
+### 5. 运行单元测试
+
+```bash
+python -m unittest discover -s tests -p "test_*.py"
 ```
 
 生成年度写作统计和趋势图表。
