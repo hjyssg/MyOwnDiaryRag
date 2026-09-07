@@ -103,6 +103,20 @@ class DiaryImporter:
                     pass
         return None
 
+    def parse_month_from_filename(self, filename, year):
+        """
+        从文件名解析整月合集。
+        支持 MM月.txt、MM月-标题.txt（如 01月.txt、05月-封城日记2.txt）。
+        返回匹配到的月份(1-12)或 None
+        """
+        match = re.match(r'^(\d{1,2})月(?:[-_ ][^.]*)?\.txt$', filename)
+        if match:
+            month = int(match.group(1))
+            if 1 <= month <= 12:
+                return month
+        # 也支持 MM月 开头无后缀直接 .txt（例如 2023/09_11 那种不含月）
+        return None
+
     def is_title_line(self, line, year):
         """判断是否为标题行，如 '2025 生活日记' '2024 炒股日记'"""
         patterns = [
@@ -126,7 +140,8 @@ class DiaryImporter:
             return None
 
         patterns = [
-            (r'^(\d{2})(\d{2})$', None),        # 0401
+            # 0401 或 0401 周日 / 0401 星期三（整月合集常带星期后缀）
+            (r'^(\d{2})(\d{2})(?:\s+(?:周|星期)[一二三四五六日天])?$', None),
             (r'^(\d{1,2})_(\d{1,2})$', None),   # 01_01
             (r'^(\d{1,2})月(\d{1,2})日$', None), # 1月1日
             (r'^(\d{1,2})/(\d{1,2})$', None),   # 01/01
@@ -249,6 +264,10 @@ class DiaryImporter:
                 return 'multi_day'
             return 'single_day'
 
+        # 整月合集 MM月.txt / MM月-标题.txt（如 01月.txt、05月-封城日记2.txt）
+        if self.parse_month_from_filename(filename, year):
+            return 'multi_day'
+
         # 无法识别
         return 'note'
 
@@ -300,7 +319,11 @@ class DiaryImporter:
                     # 拆分失败，作为整体存储
                     fallback_date = self.parse_date_from_filename(filename, year)
                     if not fallback_date:
-                        fallback_date = date(int(year), 1, 1)
+                        fallback_month = self.parse_month_from_filename(filename, year)
+                        if fallback_month:
+                            fallback_date = date(int(year), fallback_month, 1)
+                        else:
+                            fallback_date = date(int(year), 1, 1)
                     entries.append({
                         'date': fallback_date,
                         'content': content,
