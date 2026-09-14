@@ -296,6 +296,17 @@ body {
 .random-article .meta { color: var(--muted); font-size: 13px; }
 .otd-card .otd-head { padding: 14px 18px; }
 
+/* 随机一天：直接展开全文，无需面板 */
+.random-entry .entry-head {
+    cursor: default;
+    padding-bottom: 0;
+}
+.random-entry .entry-full-content {
+    padding: 12px 18px 18px;
+    font-size: 16px;
+}
+.random-list .random-entry:hover { box-shadow: 0 4px 14px rgba(0,0,0,.07); }
+
 /* ---- 可展开详情（手风琴） ---- */
 .expand-icon {
     margin-left: auto;

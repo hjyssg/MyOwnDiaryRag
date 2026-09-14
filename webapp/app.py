@@ -305,7 +305,7 @@ def api_random():
         month=day["month"],
         day=day["day"],
         total=len(entries),
-        items=[OnThisDayItem(**e) for e in entries],
+        items=[OnThisDayItem.model_validate(e) for e in entries],
     )
 
 
