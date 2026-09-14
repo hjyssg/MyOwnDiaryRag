@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}日记{% endblock %} · 日记回溯</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <header class="topbar">
+        <a class="brand" href="/">📔 日记回溯</a>
+        <nav class="nav">
+            <a href="/">首页</a>
+            <a href="/browse">浏览日记</a>
+            <a href="/on-this-day">过去的今天</a>
+        </nav>
+    </header>
+
+    <main class="container">
+        {% block content %}{% endblock %}
+    </main>
+
+    <footer class="footer">
+        <span>纯本地只读 · 数据不出本机</span>
+        <a href="/docs" target="_blank" rel="noopener">API 文档 /docs</a>
+    </footer>
+
+    <script src="/static/app.js"></script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

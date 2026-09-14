@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block title %}浏览日记{% endblock %}
+{% block content %}
+<h1 class="page-title">浏览日记</h1>
+
+<form class="filter-bar" method="get" action="/browse">
+    <select name="year" id="yearSelect">
+        <option value="">全部年份</option>
+        {% for y in years %}
+        <option value="{{ y }}" {% if y == year %}selected{% endif %}>{{ y }}年</option>
+        {% endfor %}
+    </select>
+
+    <select name="month" id="monthSelect">
+        <option value="">全部月份</option>
+        {% for m in months %}
+        <option value="{{ m }}" {% if m == month %}selected{% endif %}>{{ m }}月</option>
+        {% endfor %}
+    </select>
+
+    <select name="entry_type">
+        <option value="">全部类型</option>
+        {% for t in entry_types %}
+        <option value="{{ t }}" {% if t == entry_type %}selected{% endif %}>{{ t|entry_type_label }}</option>
+        {% endfor %}
+    </select>
+
+    <input type="text" name="q" value="{{ q or '' }}" placeholder="关键词搜索…">
+    <button type="submit">筛选</button>
+    <a class="btn-plain" href="/browse">重置</a>
+</form>
+
+<div id="list" class="entry-list">
+    <div class="list-head">
+        <span>找到 <strong>{{ total }}</strong> 篇</span>
+        <span class="page-info">第 {{ page }} / {{ pages }} 页</span>
+    </div>
+
+    {% for e in entries %}
+    <a class="entry-row" href="/entries/{{ e.id }}">
+        <div class="entry-date">
+            <span class="d">{{ e.day }}</span>
+            <span class="my">{{ e.year }}.{{ e.month }}</span>
+        </div>
+        <div class="entry-body">
+            <div class="row-top">
+                <span class="badge type-{{ e.entry_type }}">{{ e.entry_type|entry_type_label }}</span>
+                <span class="words">{{ e.word_count }} 字</span>
+                <span class="date-full">{{ e.date }}</span>
+            </div>
+            {% if e.summary %}
+            <div class="summary">{{ e.summary }}</div>
+            {% endif %}
+            <div class="preview">{{ e.preview }}</div>
+        </div>
+    </a>
+    {% else %}
+    <div class="empty">没有符合条件的日记。</div>
+    {% endfor %}
+
+    {% if pages > 1 %}
+    <div class="pager">
+        {% if page > 1 %}
+        <a href="?page={{ page - 1 }}&year={{ year or '' }}&month={{ month or '' }}&entry_type={{ entry_type or '' }}&q={{ q or '' }}">← 上一页</a>
+        {% endif %}
+        <span>{{ page }} / {{ pages }}</span>
+        {% if page < pages %}
+        <a href="?page={{ page + 1 }}&year={{ year or '' }}&month={{ month or '' }}&entry_type={{ entry_type or '' }}&q={{ q or '' }}">下一页 →</a>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // 选择年份后动态更新月份下拉框
+    const yearSelect = document.getElementById('yearSelect');
+    const monthSelect = document.getElementById('monthSelect');
+    const currentMonth = "{{ month or '' }}";
+    yearSelect.addEventListener('change', async () => {
+        const y = yearSelect.value;
+        monthSelect.innerHTML = '<option value="">全部月份</option>';
+        if (!y) return;
+        const res = await fetch('/api/months?year=' + y);
+        const months = await res.json();
+        months.forEach(m => {
+            const opt = document.createElement('option');
+            opt.value = m.month;
+            opt.textContent = m.month + '月（' + m.entries + '篇）';
+            if (String(m.month) === currentMonth) opt.selected = true;
+            monthSelect.appendChild(opt);
+        });
+    });
+</script>
+{% endblock %}
