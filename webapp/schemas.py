@@ -95,3 +95,15 @@ class SearchResult(EntryPreview):
     """搜索结果（复用列表项模型）"""
 
     pass
+
+
+class RandomDayResponse(BaseModel):
+    """随机一天的日记响应（该日期的全部条目）"""
+
+    date: str
+    year: int
+    month: int
+    day: int
+    total: int
+    items: List[OnThisDayItem]
+

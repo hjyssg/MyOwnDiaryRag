@@ -35,6 +35,7 @@ from schemas import (
     OnThisDayGroup,
     OnThisDayItem,
     OnThisDayResponse,
+    RandomDayResponse,
     YearStat,
 )
 
@@ -190,6 +191,22 @@ def on_this_day_page(
         },
     )
 
+@app.get("/random", response_class=HTMLResponse)
+def random_page(request: Request):
+    """随机一天的日记页面"""
+    day = _db.random_date()
+    if day is None:
+        raise HTTPException(status_code=404, detail="暂无日记记录")
+    entries = _db.entries_for_date(day["date"])
+    return templates.TemplateResponse(
+        request,
+        "random.html",
+        {
+            "day": day,
+            "entries": entries,
+            "total": len(entries),
+        },
+    )
 
 # ---------------------------------------------------------------
 # REST API（数据接口，供前端 fetch 或第三方调用）
@@ -272,6 +289,23 @@ def api_search(
     total = len(items)
     return EntryListResponse(
         total=total, page=1, per_page=limit, pages=1, items=items, query=q,
+    )
+
+
+@app.get("/api/random", response_model=RandomDayResponse)
+def api_random():
+    """随机一天的日记（该日期的全部条目）"""
+    day = _db.random_date()
+    if day is None:
+        raise HTTPException(status_code=404, detail="暂无日记记录")
+    entries = _db.entries_for_date(day["date"])
+    return RandomDayResponse(
+        date=day["date"],
+        year=day["year"],
+        month=day["month"],
+        day=day["day"],
+        total=len(entries),
+        items=[OnThisDayItem(**e) for e in entries],
     )
 
 

@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}随机一天 {{ day.year }}年{{ day.month }}月{{ day.day }}日{% endblock %}
+{% block content %}
+<h1 class="page-title">🎲 随机一天</h1>
+<p class="sub">从历年日记中随机抽取一天，点击条目即可展开阅读。</p>
+
+<div class="random-toolbar">
+    <a class="btn-primary" href="/random">🎲 再随机一篇</a>
+    <span class="random-hint">← 看看今天抽到了什么</span>
+</div>
+
+<article class="article random-article">
+    <header class="article-head">
+        <h1><a href="/browse?year={{ day.year }}&month={{ day.month }}">{{ day.year }}</a> 年
+            {{ day.month }} 月 {{ day.day }} 日</h1>
+        <div class="meta">
+            <span>共 <strong>{{ total }}</strong> 篇 · </span>
+            <a class="otd-link" href="/on-this-day?month={{ day.month }}&day={{ day.day }}">🌅 看其他年份的同一天</a>
+        </div>
+    </header>
+</article>
+
+<div class="entry-list">
+    {% for e in entries %}
+    <div class="entry-row expandable" data-id="{{ e.id }}">
+        <div class="entry-head" onclick="DiaryUI.toggle(this)" role="button" tabindex="0"
+             onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();DiaryUI.toggle(this)}">
+            <div class="entry-body">
+                <div class="row-top">
+                    <span class="badge type-{{ e.entry_type }}">{{ e.entry_type|entry_type_label }}</span>
+                    <span class="words">{{ e.word_count }} 字</span>
+                    <span class="date-full">{{ e.date }}</span>
+                </div>
+                {% if e.summary %}
+                <div class="summary">{{ e.summary }}</div>
+                {% endif %}
+                <div class="preview">{{ e.preview }}</div>
+            </div>
+            <span class="expand-icon">▾</span>
+        </div>
+        <div class="entry-detail" hidden>
+            <div class="entry-full-content"></div>
+            <div class="entry-actions">
+                <a class="open-full" href="/entries/{{ e.id }}">📄 在完整页面查看</a>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<p class="empty-hint">
+    想固定回忆某个日子？试试
+    <a class="otd-link" href="/on-this-day">过去的今天</a>。
+</p>
+{% endblock %}
