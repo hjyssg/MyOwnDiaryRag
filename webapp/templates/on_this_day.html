@@ -4,6 +4,12 @@
 <h1 class="page-title">🌅 过去的今天</h1>
 <p class="sub">回顾每一年的这一天，你写下了什么。</p>
 
+<nav class="otd-nav">
+    <a class="otd-nav-btn" href="/on-this-day?month={{ prev_month }}&day={{ prev_day }}">← {{ prev_month }}月{{ prev_day }}日</a>
+    <span class="otd-nav-current">{{ month }}月{{ day }}日</span>
+    <a class="otd-nav-btn" href="/on-this-day?month={{ next_month }}&day={{ next_day }}">{{ next_month }}月{{ next_day }}日 →</a>
+</nav>
+
 <form class="date-picker" method="get" action="/on-this-day">
     <label>月
         <select name="month">
@@ -24,7 +30,8 @@
 
 <div class="otd-summary">
     {% if has_records %}
-    <span>这一天在 <strong>{{ groups|length }}</strong> 个年份里共留下 <strong>{{ total }}</strong> 篇日记。</span>
+    <span>这一天在 <strong>{{ groups|length }}</strong> 个年份里共留下 <strong>{{ total }}</strong> 篇日记。
+        点击任意一篇即可展开查看，无需跳转。</span>
     {% else %}
     <span class="empty">这些年的这一天还没有写过日记 📭</span>
     {% endif %}
@@ -37,17 +44,27 @@
         <a href="/browse?year={{ g.year }}&month={{ month }}">{{ month }}月{{ day }}日</a>
     </h2>
     {% for item in g['items'] %}
-    <a class="otd-card" href="/entries/{{ item.id }}">
-        <div class="row-top">
-            <span class="badge type-{{ item.entry_type }}">{{ item.entry_type|entry_type_label }}</span>
-            <span class="words">{{ item.word_count }} 字</span>
-            <span class="date-full">{{ item.date }}</span>
+    <div class="otd-card expandable" data-id="{{ item.id }}">
+        <div class="otd-head" onclick="DiaryUI.toggle(this)" role="button" tabindex="0"
+             onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();DiaryUI.toggle(this)}">
+            <div class="row-top">
+                <span class="badge type-{{ item.entry_type }}">{{ item.entry_type|entry_type_label }}</span>
+                <span class="words">{{ item.word_count }} 字</span>
+                <span class="date-full">{{ item.date }}</span>
+                <span class="expand-icon">▾</span>
+            </div>
+            {% if item.summary %}
+            <div class="summary">{{ item.summary }}</div>
+            {% endif %}
+            <div class="preview">{{ item.preview }}</div>
         </div>
-        {% if item.summary %}
-        <div class="summary">{{ item.summary }}</div>
-        {% endif %}
-        <div class="preview">{{ item.preview }}</div>
-    </a>
+        <div class="entry-detail" hidden>
+            <div class="entry-full-content"></div>
+            <div class="entry-actions">
+                <a class="open-full" href="/entries/{{ item.id }}">📄 在完整页面查看</a>
+            </div>
+        </div>
+    </div>
     {% endfor %}
 </section>
 {% endfor %}

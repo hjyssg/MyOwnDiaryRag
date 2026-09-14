@@ -18,7 +18,7 @@ API 文档：http://127.0.0.1:8000/docs
 """
 
 import calendar
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Query, Request
@@ -169,6 +169,11 @@ def on_this_day_page(
     groups = [{"year": y, "items": grouped[y]} for y in sorted(grouped)]
     total = len(result)
 
+    # 计算前一天 / 后一天（以闰年 2000 为锚点，正确处理月末/年末与 2月29日）
+    _anchor = date(2000, m, d)
+    _prev = _anchor - timedelta(days=1)
+    _nxt = _anchor + timedelta(days=1)
+
     return templates.TemplateResponse(
         request,
         "on_this_day.html",
@@ -178,6 +183,10 @@ def on_this_day_page(
             "groups": groups,
             "total": total,
             "has_records": bool(result),
+            "prev_month": _prev.month,
+            "prev_day": _prev.day,
+            "next_month": _nxt.month,
+            "next_day": _nxt.day,
         },
     )
 

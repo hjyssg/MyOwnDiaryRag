@@ -37,23 +37,33 @@
     </div>
 
     {% for e in entries %}
-    <a class="entry-row" href="/entries/{{ e.id }}">
-        <div class="entry-date">
-            <span class="d">{{ e.day }}</span>
-            <span class="my">{{ e.year }}.{{ e.month }}</span>
-        </div>
-        <div class="entry-body">
-            <div class="row-top">
-                <span class="badge type-{{ e.entry_type }}">{{ e.entry_type|entry_type_label }}</span>
-                <span class="words">{{ e.word_count }} 字</span>
-                <span class="date-full">{{ e.date }}</span>
+    <div class="entry-row expandable" data-id="{{ e.id }}">
+        <div class="entry-head" onclick="DiaryUI.toggle(this)" role="button" tabindex="0"
+             onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();DiaryUI.toggle(this)}">
+            <div class="entry-date">
+                <span class="d">{{ e.day }}</span>
+                <span class="my">{{ e.year }}.{{ e.month }}</span>
             </div>
-            {% if e.summary %}
-            <div class="summary">{{ e.summary }}</div>
-            {% endif %}
-            <div class="preview">{{ e.preview }}</div>
+            <div class="entry-body">
+                <div class="row-top">
+                    <span class="badge type-{{ e.entry_type }}">{{ e.entry_type|entry_type_label }}</span>
+                    <span class="words">{{ e.word_count }} 字</span>
+                    <span class="date-full">{{ e.date }}</span>
+                </div>
+                {% if e.summary %}
+                <div class="summary">{{ e.summary }}</div>
+                {% endif %}
+                <div class="preview">{{ e.preview }}</div>
+            </div>
+            <span class="expand-icon">▾</span>
         </div>
-    </a>
+        <div class="entry-detail" hidden>
+            <div class="entry-full-content"></div>
+            <div class="entry-actions">
+                <a class="open-full" href="/entries/{{ e.id }}">📄 在完整页面查看</a>
+            </div>
+        </div>
+    </div>
     {% else %}
     <div class="empty">没有符合条件的日记。</div>
     {% endfor %}
