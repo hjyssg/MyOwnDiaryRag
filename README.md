@@ -7,6 +7,7 @@
 - 📝 **日记导入**：智能识别多种日记格式，自动分类和解析
 - 🔍 **全文搜索**：基于 SQLite FTS5 的高效全文检索
 - 🤖 **AI 摘要**：使用本地 LLM 为每条日记生成摘要
+- **年度回顾**：用本地 LLM 从日记中提取人生重要事件，生成按年份排列的年度目录
 - 📊 **统计分析**：年度写作统计和趋势分析
 
 ## 系统要求
@@ -97,7 +98,33 @@ python scripts/build_summaries.py --all
 python scripts/yearly_stats.py
 ```
 
-### 4. 运行单元测试
+### 4. 年度日记回顾（本地 LLM 提取人生重要事件）
+
+用本地 LM Studio 模型逐篇阅读数据库中的日记，提取"多年以后值得回看的人生重要事件"，
+生成按年份排列的 `年度日记回顾.md`。全程本地运行，数据库以只读方式访问。
+
+```bash
+# 1) 先确认 LM Studio 中的实际模型名（不要猜），并按提示把 LLM_MODEL 写入 .env
+python scripts/yearly_review/main.py --models
+
+# 2) 抽样试跑（跨年份抽样，只打印，不写状态/输出文件）
+python scripts/yearly_review/main.py --test --samples 10
+
+# 3) 全量生成（可随时 Ctrl+C，重跑自动续跑，已处理的条目不会再调用模型）
+python scripts/yearly_review/main.py --all
+
+# 4) 不调用模型，仅用已有中间结果重新生成 Markdown
+python scripts/yearly_review/main.py --rebuild-md
+```
+
+- 产物目录：`scripts/yearly_review/output/`
+  （`年度日记回顾.md` / `yearly_events.json` / `review_state.json` / `yearly_review.log`）
+- Prompt 独立配置：`scripts/yearly_review/prompts/yearly_review_prompt.txt`
+- 详细说明：[`scripts/yearly_review/README.md`](scripts/yearly_review/README.md)
+- 安全约定：`LLM_BASE_URL` 非本机地址会被直接拒绝，日记内容不出本机；
+  数据库只读（`mode=ro`），原始日记不修改、不删除
+
+### 5. 运行单元测试
 
 ```bash
 python -m unittest discover -s tests -p "test_*.py"

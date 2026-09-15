@@ -40,6 +40,9 @@ wheels/
 *.swo
 *~
 
+# 年度日记回顾产物（含日记内容，不入库）
+scripts/yearly_review/output/
+
 # OS
 .DS_Store
 Thumbs.db
