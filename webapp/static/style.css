@@ -174,13 +174,6 @@ body {
 .badge.type-retrospective { background: #f3e7ef; color: #8a3b6d; }
 .badge.type-note { background: #e7f0e6; color: #3b7a4e; }
 .badge.type-summary { background: #f5efe0; color: #7a6a3b; }
-
-.summary {
-    color: var(--accent);
-    font-size: 14px;
-    margin-bottom: 4px;
-    font-weight: 500;
-}
 .preview {
     color: #666;
     font-size: 14px;
@@ -213,13 +206,6 @@ body {
 .article-head h1 { margin: 0 0 10px; font-size: 26px; }
 .article .meta { display: flex; gap: 12px; align-items: center; color: var(--muted); font-size: 14px; }
 .source { color: var(--muted); }
-.summary-box {
-    margin-top: 14px;
-    padding: 12px 16px;
-    background: var(--accent-soft);
-    border-radius: 8px;
-    color: var(--accent);
-}
 .content { margin-top: 22px; font-size: 16px; white-space: normal; }
 .nearby ul { list-style: none; padding: 0; }
 .nearby li { margin-bottom: 8px; }

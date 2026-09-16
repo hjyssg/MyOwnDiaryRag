@@ -22,7 +22,6 @@ class EntryPreview(BaseModel):
     day: int
     entry_type: str
     word_count: int
-    summary: Optional[str] = None
     preview: str
 
 
@@ -71,7 +70,6 @@ class OnThisDayItem(BaseModel):
     year: int
     entry_type: str
     word_count: int
-    summary: Optional[str] = None
     preview: str
 
 

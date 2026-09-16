@@ -1,20 +1,19 @@
 # 日记管理与检索系统
 
-一个纯本地的日记管理与检索系统，支持日记导入、全文搜索、AI 摘要生成和统计分析。
+一个纯本地的日记管理与检索系统，支持日记导入、全文搜索、年度回顾和统计分析。
 
 ## 功能特性
 
 - 📝 **日记导入**：智能识别多种日记格式，自动分类和解析
 - 🔍 **全文搜索**：基于 SQLite FTS5 的高效全文检索
-- 🤖 **AI 摘要**：使用本地 LLM 为每条日记生成摘要
 - **年度回顾**：用本地 LLM 从日记中提取人生重要事件，生成按年份排列的年度目录
 - 📊 **统计分析**：年度写作统计和趋势分析
 
 ## 系统要求
 
-- Python 3.7+
+- Python 3.10+
 - SQLite 3
-- (可选) LM Studio - 用于 AI 摘要功能
+- (可选) LM Studio - 用于年度日记回顾
 
 ## 安装配置
 
@@ -78,27 +77,13 @@ python scripts/import_diary_to_db.py
 
 这将扫描日记文件夹，智能识别文件类型，并导入到 SQLite 数据库。
 
-### 2. 生成 AI 摘要（可选）
-
-需要先启动 LM Studio 并加载模型（如 Gemma）。
-
-抽样测试（测试 10 条）：
-```bash
-python scripts/build_summaries.py --test
-```
-
-全量生成：
-```bash
-python scripts/build_summaries.py --all
-```
-
-### 3. 年度统计
+### 2. 年度统计
 
 ```bash
 python scripts/yearly_stats.py
 ```
 
-### 4. 年度日记回顾（本地 LLM 提取人生重要事件）
+### 3. 年度日记回顾（本地 LLM 提取人生重要事件）
 
 用本地 LM Studio 模型逐篇阅读数据库中的日记，提取"多年以后值得回看的人生重要事件"，
 生成按年份排列的 `年度日记回顾.md`。全程本地运行，数据库以只读方式访问。
@@ -138,7 +123,7 @@ python scripts/yearly_review/status.py
 - 安全约定：`LLM_BASE_URL` 非本机地址会被直接拒绝，日记内容不出本机；
   数据库只读（`mode=ro`），原始日记不修改、不删除
 
-### 5. 运行单元测试
+### 4. 运行单元测试
 
 ```bash
 python -m unittest discover -s tests -p "test_*.py"
@@ -156,7 +141,6 @@ python -m unittest discover -s tests -p "test_*.py"
 | date | DATE | 日记日期 |
 | year/month/day | INTEGER | 年/月/日 |
 | content | TEXT | 日记内容 |
-| summary | TEXT | AI 生成的摘要 |
 | file_source | TEXT | 源文件路径 |
 | entry_type | TEXT | 条目类型 |
 | word_count | INTEGER | 字数 |
@@ -173,7 +157,7 @@ python -m unittest discover -s tests -p "test_*.py"
 ## 技术架构
 
 - **数据库**：SQLite + FTS5 全文搜索
-- **AI 模型**：LM Studio（仅用于摘要生成）
+- **AI 模型**：LM Studio（仅用于年度日记回顾）
 
 ## 关于为何移除 RAG 问答
 
@@ -183,7 +167,7 @@ python -m unittest discover -s tests -p "test_*.py"
 - 文本里存在计划、回忆、引用、吐槽等噪声，关键词命中不等于事实发生
 - 缺少明确标注数据时，模型与规则都只能做近似推断，无法给出可验证的确定答案
 
-因此当前版本定位为：**导入 + 检索 + 摘要 + 统计**，不再提供 RAG 问答入口。
+因此当前版本定位为：**导入 + 检索 + 年度回顾 + 统计**，不再提供 RAG 问答入口。
 
 > 备注：随着未来 LLM 模型能力、长上下文与工具调用稳定性继续提升，
 > 在口径先定义清楚的前提下，问答效果有机会明显改善；后续可再评估是否重启该能力。

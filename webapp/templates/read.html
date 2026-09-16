@@ -15,9 +15,6 @@
             <span class="source" title="{{ entry.file_source }}">📄 来源文件</span>
             {% endif %}
         </div>
-        {% if entry.summary %}
-        <div class="summary-box">📌 {{ entry.summary }}</div>
-        {% endif %}
     </header>
 
     <div class="content">{{ entry.content|replace("\n", "<br>")|safe }}</div>

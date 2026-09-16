@@ -7,7 +7,6 @@
 
 import sqlite3
 import sys
-import matplotlib.pyplot as plt
 from pathlib import Path
 
 # 确保可导入项目根目录模块（如 config.py）
@@ -19,7 +18,7 @@ def get_yearly_stats(db_path):
     """获取年度字数统计"""
     conn = sqlite3.connect(db_path)
     
-    # 仅查询字数相关字段，排除2026年
+    # 查询数据库中的全部年份
     query = """
     SELECT 
         year,
@@ -28,7 +27,6 @@ def get_yearly_stats(db_path):
         MAX(date) as last_entry,
         ROUND(SUM(word_count) / COUNT(DISTINCT strftime('%j', date)), 1) as avg_words_per_active_day
     FROM diary_entries
-    WHERE year <= 2025
     GROUP BY year
     ORDER BY year
     """
@@ -77,7 +75,7 @@ def analyze_trends(stats):
     periods = [
         ("初中-高中", 2004, 2010),
         ("大学时期", 2011, 2014),
-        ("工作时期", 2015, 2026)
+        ("工作时期", 2015, max(s[0] for s in stats))
     ]
     
     for label, start, end in periods:
@@ -89,6 +87,8 @@ def analyze_trends(stats):
 def create_charts(stats):
     """创建字数统计图表"""
     try:
+        import matplotlib.pyplot as plt
+
         plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei']
         plt.rcParams['axes.unicode_minus'] = False
         
@@ -97,7 +97,11 @@ def create_charts(stats):
         
         # 仅保留两个最核心的字数图表
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
-        fig.suptitle('日记字数统计趋势 (2004-2025)', fontsize=16, fontweight='bold')
+        fig.suptitle(
+            f'日记字数统计趋势 ({min(years)}-{max(years)})',
+            fontsize=16,
+            fontweight='bold',
+        )
         
         # 1. 年度字数曲线
         ax1.plot(years, words, marker='o', linewidth=2, color='#2E8B57')
@@ -108,9 +112,9 @@ def create_charts(stats):
         ax1.tick_params(axis='x', rotation=45)
         
         # 2. 时期分布饼图
-        early_words = sum(s[1] for s in stats if 2004 <= s[0] <= 2010)
+        early_words = sum(s[1] for s in stats if s[0] <= 2010)
         college_words = sum(s[1] for s in stats if 2011 <= s[0] <= 2014)
-        work_words = sum(s[1] for s in stats if 2015 <= s[0] <= 2026)
+        work_words = sum(s[1] for s in stats if s[0] >= 2015)
         
         ax2.pie([early_words, college_words, work_words], 
                 labels=['初中-高中', '大学', '工作'], 
@@ -127,11 +131,9 @@ def create_charts(stats):
         print(f"\n⚠️ 绘图失败: {e}")
 
 def main():
-    from config import get_config
-    
     try:
-        config = get_config()
-        db_path = config['database_path']
+        from config import get_database_path
+        db_path = get_database_path()
     except Exception as e:
         print(f"❌ 配置加载失败: {e}")
         return

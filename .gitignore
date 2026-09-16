@@ -36,6 +36,7 @@ wheels/
 # IDE
 .vscode/
 .idea/
+.sf/
 *.swp
 *.swo
 *~
@@ -46,5 +47,4 @@ scripts/yearly_review/output/
 # OS
 .DS_Store
 Thumbs.db
-scripts/import_diary_to_db.py
 scripts/yearly_word_stats.png

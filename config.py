@@ -1,12 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-配置加载模块
-从 .env 文件读取日记路径和数据库路径
-"""
+"""从项目根目录的 .env 读取配置。"""
 
-import os
 from pathlib import Path
+
 
 def load_env():
     """加载 .env 文件"""
@@ -30,27 +27,32 @@ def load_env():
     
     return env_vars
 
-def get_config():
-    """获取配置"""
+def get_database_path() -> Path:
+    """读取数据库路径；Web 等只读功能不要求配置日记目录。"""
     env = load_env()
-    
-    diary_base_path = env.get('DIARY_BASE_PATH')
     database_path = env.get('DATABASE_PATH')
-    lm_studio_url = env.get('LM_STUDIO_URL', 'http://127.0.0.1:1234/v1/chat/completions')
-    
-    if not diary_base_path:
-        raise ValueError("DIARY_BASE_PATH 未在 .env 中配置")
     if not database_path:
         raise ValueError("DATABASE_PATH 未在 .env 中配置")
-    
-    diary_base_path = Path(diary_base_path)
-    database_path = Path(database_path)
-    
+
+    return Path(database_path).expanduser()
+
+
+def get_diary_base_path() -> Path:
+    """读取并校验原始日记目录（仅导入脚本需要）。"""
+    env = load_env()
+    diary_base_path = env.get('DIARY_BASE_PATH')
+    if not diary_base_path:
+        raise ValueError("DIARY_BASE_PATH 未在 .env 中配置")
+
+    diary_base_path = Path(diary_base_path).expanduser()
     if not diary_base_path.exists():
         raise FileNotFoundError(f"日记目录不存在: {diary_base_path}")
-    
+    return diary_base_path
+
+
+def get_config():
+    """获取导入脚本所需的完整路径配置。"""
     return {
-        'diary_base_path': diary_base_path,
-        'database_path': database_path,
-        'lm_studio_url': lm_studio_url
+        'diary_base_path': get_diary_base_path(),
+        'database_path': get_database_path(),
     }

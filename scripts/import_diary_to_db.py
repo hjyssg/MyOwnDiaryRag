@@ -35,7 +35,11 @@ class DiaryImporter:
         self.diary_root = Path(diary_root_path)
         self.db_path = db_path
         self.conn = None
-        self.year_folders = [f"{year}" for year in range(2004, 2027)]
+        self.year_folders = sorted(
+            path.name
+            for path in self.diary_root.iterdir()
+            if path.is_dir() and re.fullmatch(r"\d{4}", path.name)
+        )
         self.excluded_items = {
             'anime_record', 'etc', 'fap', 'merged_diaries', 'database_tools',
             '.gitignore', 'README.md', '.git'

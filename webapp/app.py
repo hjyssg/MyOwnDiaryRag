@@ -18,16 +18,22 @@ API 文档：http://127.0.0.1:8000/docs
 """
 
 import calendar
+import sys
 from datetime import date, timedelta
 from pathlib import Path
+
+# 支持从 webapp/ 目录直接运行 ``python app.py``。
+ROOT_DIR = Path(__file__).resolve().parent.parent
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from config import get_database_path
-from database import Database
+from config import get_database_path  # noqa: E402
+from database import Database  # noqa: E402
 from schemas import (
     EntryDetail,
     EntryListResponse,

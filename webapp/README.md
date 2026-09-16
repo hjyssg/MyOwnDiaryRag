@@ -6,7 +6,7 @@
 
 ## 功能
 
-- 🗂️ **浏览日记**：按年份 / 月份 / 类型筛选，分页浏览，每篇含摘要与正文预览
+- 🗂️ **浏览日记**：按年份 / 月份 / 类型筛选，分页浏览，每篇含正文预览
 - 📖 **内联展开阅读**：在多篇列表页（浏览 / 过去的今天）点击条目即可展开全文，无需跳转，
   自动关闭其他展开项（手风琴效果）；也可点击「在完整页面查看」打开独立阅读页
 - 🔍 **全文搜索**：基于 SQLite FTS5 的关键词检索
@@ -62,9 +62,7 @@ Windows 也可直接双击 `run.bat`。
 ```
 webapp/
 ├── app.py            # FastAPI 主应用：页面路由 + REST API
-├── database.py       # 数据库访问层（只读 SQLite，封装全部 SQL）
 ├── schemas.py        # Pydantic 数据模型（校验 + 生成文档）
-├── config.py         # 复用根目录 config.py，提供数据库路径
 ├── requirements.txt  # 依赖：fastapi / uvicorn[standard] / jinja2
 ├── run.bat           # Windows 一键启动
 ├── templates/        # Jinja2 页面模板
@@ -72,7 +70,8 @@ webapp/
 │   ├── index.html         # 首页：年份总览
 │   ├── browse.html        # 浏览：筛选 + 分页 + 搜索
 │   ├── read.html          # 单篇阅读 + 同月侧栏
-│   └── on_this_day.html   # 过去的今天
+│   ├── on_this_day.html   # 过去的今天
+│   └── random.html        # 随机一天
 └── static/
     ├── style.css      # 样式
     └── app.js         # 少量前端交互
@@ -120,7 +119,7 @@ curl "http://127.0.0.1:8000/api/on-this-day?month=9&day=14"
 ## 维护说明（面向后续 AI/开发者）
 
 - 改**页面样式/结构**：编辑 `templates/` 下的 Jinja2 文件与 `static/style.css`
-- 改**数据查询**：一律封装在 `database.py` 的 `Database` 类里，
+- 改**数据查询**：一律封装在项目根目录 `database.py` 的 `Database` 类里，
   页面与 API 只调用其方法，不直接写 SQL
 - 改**接口校验/文档**：编辑 `schemas.py` 中的 Pydantic 模型
 - 新增接口：在 `app.py` 添加装饰器路由，并在上方表格与本文档同步更新
