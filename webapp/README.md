@@ -1,8 +1,19 @@
 # 📔 日记回溯 · Web 浏览系统
 
+> 🏠 返回 [项目主 README](../README.md) ｜ 兄弟模块：[日记批量总结](../scripts/batch_summary/README.md)
+
 一个纯**本地、只读**的日记浏览网页系统，构建在现有的
 `diary_database.db`（SQLite + FTS5）之上。后端使用 **FastAPI**，
 前端为轻量 **Jinja2 服务端渲染** + 少量原生 JS。数据全程不出本机。
+
+## 目录
+
+- [功能](#功能)
+- [快速开始](#快速开始)
+- [目录结构](#目录结构)
+- [REST API](#rest-api)
+- [数据安全约定](#数据安全约定)
+- [维护说明（面向后续 AI/开发者）](#维护说明面向后续-ai开发者)
 
 ## 功能
 
@@ -28,6 +39,9 @@ pip install -r requirements.txt
 ```
 
 ### 2. 配置
+
+**前置条件**：数据库需先导入生成（见 [项目主 README](../README.md) 的「导入日记到数据库」）；
+本系统只读，不会自动建库。
 
 系统通过项目根目录的 `.env` + `config.py` 读取数据库路径，
 无需在 `webapp/` 内重复配置。确认根目录 `.env` 的 `DATABASE_PATH` 指向
@@ -126,3 +140,7 @@ curl "http://127.0.0.1:8000/api/on-this-day?month=9&day=14"
 
 新增一种日记类型的中文名时，只需在 `app.py` 的 `ENTRY_TYPE_LABELS` 中补一项，
 模板会自动通过 `entry_type_label` 过滤器显示。
+
+---
+
+相关文档：[项目主 README](../README.md) ｜ [日记批量总结](../scripts/batch_summary/README.md)

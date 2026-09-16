@@ -1,5 +1,7 @@
 # 日记批量总结（batch_summary）
 
+> 🏠 返回 [项目主 README](../../README.md) ｜ 兄弟模块：[Web 浏览系统](../../webapp/README.md)
+
 用**本地 LM Studio 模型**逐篇阅读 SQLite 里的日记，为**每一篇**写一段摘要，
 生成按年份排列的 `日记总结.md`。全程在本机运行，数据库**只读**，原始日记不修改、不删除。
 
@@ -7,6 +9,18 @@
 本地小模型判断力不够时会大量返回"无重要事件"，把整段日常直接丢掉；现在改成
 "每一篇都写摘要"，模型只负责把原文概述成一段话，哪些内容值得回看由你自己看的时候决定。
 因此这里没有事件抽取、重要性打分、标题长度限制，也没有跨天合并与相似度去重。
+
+## 目录
+
+- [1. 准备 LM Studio](#1-准备-lm-studio)
+- [2. 配置（项目根目录 `.env`，追加即可）](#2-配置项目根目录-env追加即可)
+- [3. 运行](#3-运行)
+- [4. 产物](#4-产物)
+- [5. 断点续跑与失败处理](#5-断点续跑与失败处理)
+- [6. 模型输出如何被清洗（Python 负责，不依赖模型）](#6-模型输出如何被清洗python-负责不依赖模型)
+- [7. 调 Prompt / 调参数](#7-调-prompt--调参数)
+- [8. 性能与范围](#8-性能与范围)
+- [9. 测试](#9-测试)
 
 ```
 scripts/batch_summary/
@@ -56,7 +70,8 @@ SUMMARY_PREVIEW_SECONDS=60      # 运行期间每隔多少秒刷新一次「中�
 新键没配置时读旧键，老的 `.env` 不用改也能跑。
 
 安全约束（代码级强制）：`LLM_BASE_URL` 的 host 不是 `127.0.0.1 / localhost / ::1` 时直接报错退出，
-日记内容不会被发送到任何外部服务。
+日记内容不会被发送到任何外部服务。数据库以只读方式打开（SQLite `mode=ro`），
+原始日记文件不修改、不删除；产物只写到本模块的 `output/` 目录（已被 `.gitignore` 忽略）。
 
 ### 推理模型（Qwen3.5 等）必须注意
 
@@ -104,9 +119,10 @@ python scripts/batch_summary/status.py --list          # 列出历史运行目�
 # 忽略断点状态，全部重新总结
 python scripts/batch_summary/main.py --all --force
 
-# 心跳间隔改成 60 秒；关闭中途预览
+# 心跳间隔改成 60 秒；关闭中途预览；关闭心跳
 python scripts/batch_summary/main.py --all --heartbeat 60
 python scripts/batch_summary/main.py --all --no-preview
+python scripts/batch_summary/main.py --all --no-heartbeat
 ```
 
 也可以在项目根目录用模块方式运行：`python -m scripts.batch_summary.main --all`
@@ -252,5 +268,9 @@ python -m unittest discover -s tests -p "test_*.py"
 
 覆盖：摘要清洗与截断、按年渲染与日期标签、断点状态（含旧版状态忽略）、失败隔离与续跑、
 运行期心跳/状态块、中途预览、状态看板。全部用例都不需要真实 LLM。
+
+---
+
+相关文档：[项目主 README](../../README.md) ｜ [Web 浏览系统](../../webapp/README.md)
 
 
