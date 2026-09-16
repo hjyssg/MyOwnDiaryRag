@@ -125,8 +125,12 @@ python scripts/yearly_review/status.py
   生成年度重要事件 / 保存结果）、正在处理哪一天、成功/失败数、速度与预计剩余。
   也可直接在编辑器里打开 `<运行目录>\运行状态.txt` 查看，无需任何命令。
   调整间隔：`--heartbeat 60`，关闭：`--no-heartbeat`。
+- **全量跑几小时也能中途看结果**：最终 `年度日记回顾.md` 只在整轮跑完才写，
+  但运行期间主程序会自动刷新运行目录里的 **`中途预览.md`**（默认每 60 秒，正文与最终产物
+  逐行一致），随时打开就能看到已提取的部分；`--preview-every 120` 调整间隔，
+  `--preview-every 0` / `--no-preview` 关闭。
 - **每次运行的产物放在 `scripts/yearly_review/output/<YYMMDDHHMMSS>/` 时间戳子目录**里
-  （`年度日记回顾.md` / `yearly_events.json` / `progress.json` / `运行状态.txt` /
+  （`年度日记回顾.md` / `中途预览.md` / `yearly_events.json` / `progress.json` / `运行状态.txt` /
   `待复核_判定无事件.md` / `yearly_review.log`），历史互不覆盖；
   断点状态固定在 `output/review_state.json`，跨运行共享，重跑即续跑。
 - Prompt 独立配置：`scripts/yearly_review/prompts/yearly_review_prompt.txt`
