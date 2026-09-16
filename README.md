@@ -115,10 +115,20 @@ python scripts/yearly_review/main.py --all
 
 # 4) 不调用模型，仅用已有中间结果重新生成 Markdown
 python scripts/yearly_review/main.py --rebuild-md
+
+# 5) 想看进度（可选）：主程序运行时自己就会持续打印进度，这一步通常不需要
+python scripts/yearly_review/status.py
 ```
 
-- 产物目录：`scripts/yearly_review/output/`
-  （`年度日记回顾.md` / `yearly_events.json` / `review_state.json` / `yearly_review.log`）
+- **运行期间程序自己打印实时进度**（默认每 30 秒一块，中文、人类可读）：
+  已处理 xx / xx 篇（覆盖 xx / xx 天）、当前阶段（读取日记 / 调用模型 /
+  生成年度重要事件 / 保存结果）、正在处理哪一天、成功/失败数、速度与预计剩余。
+  也可直接在编辑器里打开 `<运行目录>\运行状态.txt` 查看，无需任何命令。
+  调整间隔：`--heartbeat 60`，关闭：`--no-heartbeat`。
+- **每次运行的产物放在 `scripts/yearly_review/output/<YYMMDDHHMMSS>/` 时间戳子目录**里
+  （`年度日记回顾.md` / `yearly_events.json` / `progress.json` / `运行状态.txt` /
+  `待复核_判定无事件.md` / `yearly_review.log`），历史互不覆盖；
+  断点状态固定在 `output/review_state.json`，跨运行共享，重跑即续跑。
 - Prompt 独立配置：`scripts/yearly_review/prompts/yearly_review_prompt.txt`
 - 详细说明：[`scripts/yearly_review/README.md`](scripts/yearly_review/README.md)
 - 安全约定：`LLM_BASE_URL` 非本机地址会被直接拒绝，日记内容不出本机；
