@@ -41,8 +41,8 @@ wheels/
 *.swo
 *~
 
-# 年度日记回顾产物（含日记内容，不入库）
-scripts/yearly_review/output/
+# 日记批量总结产物（含日记内容，不入库）
+scripts/batch_summary/output/
 
 # OS
 .DS_Store

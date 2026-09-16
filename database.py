@@ -163,14 +163,14 @@ class Database:
         finally:
             conn.close()
 
-    # ---------------- 年度回顾（只读，供 scripts/yearly_review 复用） ----------------
+    # ---------------- 批量总结（只读，供 scripts/batch_summary 复用） ----------------
 
     def review_entries(
         self,
         years: Optional[List[int]] = None,
         entry_types: Optional[List[str]] = None,
     ) -> List[dict]:
-        """取出全部日记全文（年度事件回顾用，只读）
+        """取出全部日记全文（批量总结日记用，只读）
 
         与分页接口 entries() 不同：这里返回完整 content，并按 (year, date, id)
         升序排列，便于调用方逐篇处理与断点续跑。

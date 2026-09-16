@@ -1,19 +1,19 @@
 # 日记管理与检索系统
 
-一个纯本地的日记管理与检索系统，支持日记导入、全文搜索、年度回顾和统计分析。
+一个纯本地的日记管理与检索系统，支持日记导入、全文搜索、日记批量总结和统计分析。
 
 ## 功能特性
 
 - 📝 **日记导入**：智能识别多种日记格式，自动分类和解析
 - 🔍 **全文搜索**：基于 SQLite FTS5 的高效全文检索
-- **年度回顾**：用本地 LLM 从日记中提取人生重要事件，生成按年份排列的年度目录
+- **日记批量总结**：用本地 LLM 为**每一篇**日记写一段摘要（不做重要性筛选），按年份整理成目录
 - 📊 **统计分析**：年度写作统计和趋势分析
 
 ## 系统要求
 
 - Python 3.10+
 - SQLite 3
-- (可选) LM Studio - 用于年度日记回顾
+- (可选) LM Studio - 用于日记批量总结
 
 ## 安装配置
 
@@ -83,43 +83,45 @@ python scripts/import_diary_to_db.py
 python scripts/yearly_stats.py
 ```
 
-### 3. 年度日记回顾（本地 LLM 提取人生重要事件）
+### 3. 日记批量总结（本地 LLM 逐篇写摘要）
 
-用本地 LM Studio 模型逐篇阅读数据库中的日记，提取"多年以后值得回看的人生重要事件"，
-生成按年份排列的 `年度日记回顾.md`。全程本地运行，数据库以只读方式访问。
+用本地 LM Studio 模型逐篇阅读数据库中的日记，为**每一篇**写一段摘要（不做"重要/不重要"的筛选），
+生成按年份排列的 `日记总结.md`。全程本地运行，数据库以只读方式访问。
 
 ```bash
 # 1) 先确认 LM Studio 中的实际模型名（不要猜），并按提示把 LLM_MODEL 写入 .env
-python scripts/yearly_review/main.py --models
+python scripts/batch_summary/main.py --models
 
 # 2) 抽样试跑（跨年份抽样，只打印，不写状态/输出文件）
-python scripts/yearly_review/main.py --test --samples 10
+python scripts/batch_summary/main.py --test --samples 10
 
 # 3) 全量生成（可随时 Ctrl+C，重跑自动续跑，已处理的条目不会再调用模型）
-python scripts/yearly_review/main.py --all
+python scripts/batch_summary/main.py --all
 
-# 4) 不调用模型，仅用已有中间结果重新生成 Markdown
-python scripts/yearly_review/main.py --rebuild-md
+# 4) 不调用模型，仅用已有摘要重新生成 Markdown
+python scripts/batch_summary/main.py --rebuild-md
 
 # 5) 想看进度（可选）：主程序运行时自己就会持续打印进度，这一步通常不需要
-python scripts/yearly_review/status.py
+python scripts/batch_summary/status.py
 ```
 
 - **运行期间程序自己打印实时进度**（默认每 30 秒一块，中文、人类可读）：
   已处理 xx / xx 篇（覆盖 xx / xx 天）、当前阶段（读取日记 / 调用模型 /
-  生成年度重要事件 / 保存结果）、正在处理哪一天、成功/失败数、速度与预计剩余。
+  汇总生成总结 / 保存结果）、正在处理哪一天、有摘要/空摘要/失败数、速度与预计剩余。
   也可直接在编辑器里打开 `<运行目录>\运行状态.txt` 查看，无需任何命令。
   调整间隔：`--heartbeat 60`，关闭：`--no-heartbeat`。
-- **全量跑几小时也能中途看结果**：最终 `年度日记回顾.md` 只在整轮跑完才写，
+- **全量跑几小时也能中途看结果**：最终 `日记总结.md` 只在整轮跑完才写，
   但运行期间主程序会自动刷新运行目录里的 **`中途预览.md`**（默认每 60 秒，正文与最终产物
-  逐行一致），随时打开就能看到已提取的部分；`--preview-every 120` 调整间隔，
+  逐行一致），随时打开就能看到已总结的部分；`--preview-every 120` 调整间隔，
   `--preview-every 0` / `--no-preview` 关闭。
-- **每次运行的产物放在 `scripts/yearly_review/output/<YYMMDDHHMMSS>/` 时间戳子目录**里
-  （`年度日记回顾.md` / `中途预览.md` / `yearly_events.json` / `progress.json` / `运行状态.txt` /
-  `待复核_判定无事件.md` / `yearly_review.log`），历史互不覆盖；
-  断点状态固定在 `output/review_state.json`，跨运行共享，重跑即续跑。
-- Prompt 独立配置：`scripts/yearly_review/prompts/yearly_review_prompt.txt`
-- 详细说明：[`scripts/yearly_review/README.md`](scripts/yearly_review/README.md)
+- **每次运行的产物放在 `scripts/batch_summary/output/<YYMMDDHHMMSS>/` 时间戳子目录**里
+  （`日记总结.md` / `中途预览.md` / `summaries.json` / `progress.json` / `运行状态.txt` /
+  `待复核_未产出摘要.*` / `batch_summary.log`），历史互不覆盖；
+  断点状态固定在 `output/summary_state.json`，跨运行共享，重跑即续跑。
+- 摘要长度：Prompt 里要求 **20~40 字（最多 50 字）**，硬上限 60 字（`config.MAX_SUMMARY_CHARS`，超出按句读截断）；
+  长日记会保留前 4000 + 后 1000 字送进 Prompt。
+- Prompt 独立配置：`scripts/batch_summary/prompts/diary_summary_prompt.txt`
+- 详细说明：[`scripts/batch_summary/README.md`](scripts/batch_summary/README.md)
 - 安全约定：`LLM_BASE_URL` 非本机地址会被直接拒绝，日记内容不出本机；
   数据库只读（`mode=ro`），原始日记不修改、不删除
 
@@ -157,7 +159,7 @@ python -m unittest discover -s tests -p "test_*.py"
 ## 技术架构
 
 - **数据库**：SQLite + FTS5 全文搜索
-- **AI 模型**：LM Studio（仅用于年度日记回顾）
+- **AI 模型**：LM Studio（仅用于日记批量总结）
 
 ## 关于为何移除 RAG 问答
 
@@ -167,7 +169,7 @@ python -m unittest discover -s tests -p "test_*.py"
 - 文本里存在计划、回忆、引用、吐槽等噪声，关键词命中不等于事实发生
 - 缺少明确标注数据时，模型与规则都只能做近似推断，无法给出可验证的确定答案
 
-因此当前版本定位为：**导入 + 检索 + 年度回顾 + 统计**，不再提供 RAG 问答入口。
+因此当前版本定位为：**导入 + 检索 + 日记批量总结 + 统计**，不再提供 RAG 问答入口。
 
 > 备注：随着未来 LLM 模型能力、长上下文与工具调用稳定性继续提升，
 > 在口径先定义清楚的前提下，问答效果有机会明显改善；后续可再评估是否重启该能力。
