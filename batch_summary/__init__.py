@@ -3,17 +3,17 @@
 不做任何"重要性判断"：每一篇日记都会得到一段摘要，没有被跳过的内容，
 也没有事件抽取、日期猜测与跨天合并。
 
-包内模块统一使用绝对导入（``scripts.batch_summary.xxx``），
+包内模块统一使用绝对导入（``batch_summary.xxx``），
 因此这里确保项目根目录在 sys.path 中，使以下两种运行方式都可用：
 
-    python scripts/batch_summary/main.py --all
-    python -m scripts.batch_summary.main --all
+    python batch_summary/main.py --all
+    python -m batch_summary.main --all
 """
 
 import sys
 from pathlib import Path
 
-_ROOT_DIR = Path(__file__).resolve().parents[2]
+_ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(_ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(_ROOT_DIR))
 

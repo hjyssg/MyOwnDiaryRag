@@ -22,7 +22,7 @@ import urllib.parse
 import urllib.request
 from typing import Dict, List, Optional
 
-from scripts.batch_summary import config as bs_config
+from batch_summary import config as bs_config
 
 logger = logging.getLogger(__name__)
 

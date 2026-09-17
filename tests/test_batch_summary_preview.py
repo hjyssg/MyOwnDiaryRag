@@ -26,9 +26,9 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-from scripts.batch_summary import config as bs_config  # noqa: E402
-from scripts.batch_summary import main as bs_main  # noqa: E402
-from scripts.batch_summary import render  # noqa: E402
+from batch_summary import config as bs_config  # noqa: E402
+from batch_summary import main as bs_main  # noqa: E402
+from batch_summary import render  # noqa: E402
 
 TESTS_DIR = Path(__file__).resolve().parent
 if str(TESTS_DIR) not in sys.path:

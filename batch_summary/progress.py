@@ -25,9 +25,9 @@ import time
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 
-from scripts.batch_summary import config as bs_config
+from batch_summary import config as bs_config
 
-logger = logging.getLogger("scripts.batch_summary")
+logger = logging.getLogger("batch_summary")
 
 # 阶段 -> 中文名（让人一眼知道"现在在干什么"）
 PHASE_LABELS = {

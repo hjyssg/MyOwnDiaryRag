@@ -163,7 +163,7 @@ class Database:
         finally:
             conn.close()
 
-    # ---------------- 批量总结（只读，供 scripts/batch_summary 复用） ----------------
+    # ---------------- 批量总结（只读，供 batch_summary 复用） ----------------
 
     def review_entries(
         self,

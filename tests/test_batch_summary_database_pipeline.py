@@ -4,9 +4,9 @@ import unittest
 from contextlib import closing
 from pathlib import Path
 
-from scripts.batch_summary import config as bs_config
-from scripts.batch_summary import main as batch
-from scripts.batch_summary import render
+from batch_summary import config as bs_config
+from batch_summary import main as batch
+from batch_summary import render
 from summary_database import SummaryRepository, SummaryStore
 from summary_fingerprint import algorithm_fingerprint, algorithm_payload, emotion_payload
 
@@ -16,7 +16,7 @@ class Client:
     def chat(self, _prompt, **_overrides):
         self.call_count += 1
         if self.fail:
-            from scripts.batch_summary.llm import LLMError
+            from batch_summary.llm import LLMError
             raise LLMError("失败")
         return "整理工作并和朋友吃饭。"
 
@@ -77,7 +77,7 @@ _EMOTION_TEMPLATE = None
 def emotion_template():
     global _EMOTION_TEMPLATE
     if _EMOTION_TEMPLATE is None:
-        from scripts.batch_summary import emotion as emotion_mod
+        from batch_summary import emotion as emotion_mod
         _EMOTION_TEMPLATE = emotion_mod.load_prompt_template()
     return _EMOTION_TEMPLATE
 
@@ -96,7 +96,7 @@ class EmotionClient:
         self.kinds.append(kind)
         self.call_count += 1
         if self.fail_kind == kind:
-            from scripts.batch_summary.llm import LLMError
+            from batch_summary.llm import LLMError
             raise LLMError(f"模拟{kind}失败")
         return self.label if kind == "emotion" else "整理工作并和朋友吃饭。"
 
@@ -150,7 +150,7 @@ class EmotionPipelineTests(unittest.TestCase):
         return summary_fp, emotion_fp
 
     def classifier(self, client, emotion_fp, enabled=True):
-        from scripts.batch_summary import emotion as emotion_mod
+        from batch_summary import emotion as emotion_mod
         return emotion_mod.EmotionClassifier(
             client, emotion_template(), fingerprint=emotion_fp, max_tokens=32, enabled=enabled,
         )

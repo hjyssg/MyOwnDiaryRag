@@ -3,7 +3,7 @@
 from typing import Optional
 
 from database import Database
-from webapp.schemas import EntryListResponse
+from schemas import EntryListResponse
 
 
 def normalize_query(query: Optional[str]) -> Optional[str]:

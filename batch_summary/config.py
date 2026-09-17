@@ -36,8 +36,8 @@ from pathlib import Path
 import config as root_config
 
 # ---------------- 目录 ----------------
-BASE_DIR = Path(__file__).resolve().parent           # scripts/batch_summary
-ROOT_DIR = BASE_DIR.parent.parent                    # 项目根目录
+BASE_DIR = Path(__file__).resolve().parent           # batch_summary（与 scripts/ 平级）
+ROOT_DIR = BASE_DIR.parent                           # 项目根目录
 
 # ---------------- 输入 / 输出路径 ----------------
 PROMPT_FILE = BASE_DIR / "prompts" / "diary_summary_prompt.txt"

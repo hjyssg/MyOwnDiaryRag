@@ -3,14 +3,14 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 
 from database import Database
-from webapp.dependencies import get_database
-from webapp.schemas import (
+from dependencies import get_database
+from schemas import (
     MonthStat,
     OnThisDayResponse,
     RandomDayResponse,
     YearStat,
 )
-from webapp.services.calendar import (
+from services.calendar import (
     InvalidCalendarDate,
     get_on_this_day,
     get_random_day,

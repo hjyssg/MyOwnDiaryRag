@@ -6,9 +6,9 @@
 ## 快速开始
 
 ```bash
-python scripts/batch_summary/main.py --models              # 先确认模型名（需要 LM Studio 已启动）
-python scripts/batch_summary/main.py --test --samples 10   # 抽样试跑：只打印，不写文件
-python scripts/batch_summary/main.py --all                 # 全量（可 Ctrl+C，重跑自动续跑）
+python batch_summary/main.py --models              # 先确认模型名（需要 LM Studio 已启动）
+python batch_summary/main.py --test --samples 10   # 抽样试跑：只打印，不写文件
+python batch_summary/main.py --all                 # 全量（可 Ctrl+C，重跑自动续跑）
 ```
 
 产物只有一个文件：`output/YYMMDDHHMMSS/中途预览.md`

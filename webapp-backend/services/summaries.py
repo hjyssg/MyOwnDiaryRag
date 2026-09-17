@@ -3,7 +3,7 @@
 from config import get_emotion_labels
 from database import Database
 from summary_database import SummaryRepository
-from webapp.schemas import EmotionListResponse, SummaryListResponse
+from schemas import EmotionListResponse, SummaryListResponse
 
 
 def repository(db: Database) -> SummaryRepository:

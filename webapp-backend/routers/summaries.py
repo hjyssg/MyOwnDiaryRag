@@ -6,9 +6,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from config import get_emotion_labels
 from database import Database
-from webapp.dependencies import get_database
-from webapp.schemas import EmotionListResponse, SummaryItem, SummaryListResponse
-from webapp.services.summaries import list_emotions, list_summaries, repository
+from dependencies import get_database
+from schemas import EmotionListResponse, SummaryItem, SummaryListResponse
+from services.summaries import list_emotions, list_summaries, repository
 
 router = APIRouter(prefix="/api", tags=["summaries"])
 

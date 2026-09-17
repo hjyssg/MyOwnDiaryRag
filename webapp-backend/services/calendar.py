@@ -3,7 +3,7 @@
 import calendar
 
 from database import Database
-from webapp.schemas import (
+from schemas import (
     OnThisDayGroup,
     OnThisDayItem,
     OnThisDayResponse,

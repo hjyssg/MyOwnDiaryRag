@@ -22,10 +22,10 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 import config as root_config  # noqa: E402
-from scripts.batch_summary import config as bs_config  # noqa: E402
-from scripts.batch_summary import emotion as emotion_mod  # noqa: E402
-from scripts.batch_summary import main as bs_main  # noqa: E402
-from scripts.batch_summary.llm import LLMError  # noqa: E402
+from batch_summary import config as bs_config  # noqa: E402
+from batch_summary import emotion as emotion_mod  # noqa: E402
+from batch_summary import main as bs_main  # noqa: E402
+from batch_summary.llm import LLMError  # noqa: E402
 from summary_database import SummaryRepository, SummaryStore, tables_exist  # noqa: E402
 from summary_fingerprint import (  # noqa: E402
     EMOTION_CACHE_NAMESPACE,
@@ -332,7 +332,7 @@ class SafeSnippetTests(unittest.TestCase):
             FakeClient(answer="今天被同事甩锅，气得睡不着，真想把这段原文吐出来。"),
             emotion_mod.load_prompt_template(), fingerprint="fp", labels=LABELS, fallback=FALLBACK,
         )
-        with self.assertLogs("scripts.batch_summary", level="WARNING") as captured:
+        with self.assertLogs("batch_summary", level="WARNING") as captured:
             outcome = classifier.classify(make_entry())
         self.assertEqual(outcome["emotion"], FALLBACK)
         logged = "\n".join(captured.output)

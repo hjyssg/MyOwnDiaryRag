@@ -6,16 +6,27 @@
 """
 
 import sqlite3
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 
-from fastapi.testclient import TestClient
+# webapp-backend 目录名带连字符、不能作为包名导入，这里把项目根目录与后端目录加入 sys.path，
+# 使 `from app import app` / `from dependencies import get_database` 可用。
+ROOT_DIR = Path(__file__).resolve().parents[1]
+WEBAPP_BACKEND_DIR = ROOT_DIR / "webapp-backend"
+for _path in (ROOT_DIR, WEBAPP_BACKEND_DIR):
+    if str(_path) not in sys.path:
+        sys.path.insert(0, str(_path))
 
-from database import Database
-from scripts.batch_summary import config as bs_config
-from summary_database import SummaryStore
-from summary_fingerprint import (
+from fastapi.testclient import TestClient  # noqa: E402
+
+from app import app  # noqa: E402
+from batch_summary import config as bs_config  # noqa: E402
+from database import Database  # noqa: E402
+from dependencies import get_database  # noqa: E402
+from summary_database import SummaryStore  # noqa: E402
+from summary_fingerprint import (  # noqa: E402
     algorithm_fingerprint,
     algorithm_payload,
     cache_key,
@@ -23,8 +34,6 @@ from summary_fingerprint import (
     entry_key,
     source_hash,
 )
-from webapp.app import app
-from webapp.dependencies import get_database
 
 
 SCHEMA_SQL = """

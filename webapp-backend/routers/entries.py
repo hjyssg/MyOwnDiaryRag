@@ -5,9 +5,9 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from database import Database
-from webapp.dependencies import get_database
-from webapp.schemas import EntryDetail, EntryListResponse
-from webapp.services.entries import list_entries
+from dependencies import get_database
+from schemas import EntryDetail, EntryListResponse
+from services.entries import list_entries
 
 router = APIRouter(prefix="/api", tags=["entries"])
 

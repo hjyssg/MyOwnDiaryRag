@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """情绪分类：Prompt 装载 + 标签归一 + 独立缓存键
 
-与 :mod:`scripts.batch_summary.summary` 的分工：
+与 :mod:`batch_summary.summary` 的分工：
 
 * 摘要：模型写一段话，Python 负责清洗成一行；
 * 情绪：模型**只回一个词**，Python 负责把它归一化到 .env 里定义的标签集。
@@ -27,12 +27,12 @@ import re
 from pathlib import Path
 from typing import Dict, Optional, Sequence, Tuple
 
-from scripts.batch_summary import config as bs_config
-from scripts.batch_summary import summary as summary_mod
-from scripts.batch_summary.llm import LLMError
+from batch_summary import config as bs_config
+from batch_summary import summary as summary_mod
+from batch_summary.llm import LLMError
 from summary_fingerprint import EMOTION_CACHE_NAMESPACE, cache_key as make_cache_key
 
-logger = logging.getLogger("scripts.batch_summary")
+logger = logging.getLogger("batch_summary")
 
 _FENCE_RE = re.compile(r"```[a-zA-Z]*\s*(.*?)```", re.S)
 _LABEL_PREFIX_RE = re.compile(

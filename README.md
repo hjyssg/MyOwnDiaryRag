@@ -10,15 +10,15 @@
 | 模块 | 能做什么 | 详细文档 |
 |------|----------|----------|
 | **核心**（项目根目录） | 日记导入、SQLite FTS5 全文检索、年度字数统计、数据库结构 | 本文件 |
-| **日记批量总结** | 用本地 LM Studio 模型为**每一篇**日记写摘要，生成按年份排列的《中途预览.md》（跑完即最终版） | [`scripts/batch_summary/README.md`](scripts/batch_summary/README.md) |
-| **Web 浏览系统** | React + TypeScript 前端与 FastAPI 只读 API：浏览 / 搜索 / 摘要 / 回顾 | [`webapp/README.md`](webapp/README.md) |
+| **日记批量总结** | 用本地 LM Studio 模型为**每一篇**日记写摘要，生成按年份排列的《中途预览.md》（跑完即最终版） | [`batch_summary/README.md`](batch_summary/README.md) |
+| **Web 浏览系统** | React + TypeScript 前端与 FastAPI 只读 API：浏览 / 搜索 / 摘要 / 回顾 | [`webapp-backend/README.md`](webapp-backend/README.md) |
 
 ## 功能特性
 
 - 📝 **日记导入**：智能识别多种日记格式（单日 / 整月合集 / 多日合一），自动分类和解析
 - 🔍 **全文搜索**：基于 SQLite FTS5 的高效全文检索
-- 🧠 **日记批量总结**：用本地 LLM 为**每一篇**日记写一段摘要（不做重要性筛选），并额外判断情绪标签，按年份整理成目录 → [详细说明](scripts/batch_summary/README.md)
-- 🌐 **网页浏览**：React 本地只读界面，支持浏览、搜索、摘要（可按情绪筛选）、「过去的今天」与随机回看 → [详细说明](webapp/README.md)
+- 🧠 **日记批量总结**：用本地 LLM 为**每一篇**日记写一段摘要（不做重要性筛选），并额外判断情绪标签，按年份整理成目录 → [详细说明](batch_summary/README.md)
+- 🌐 **网页浏览**：React 本地只读界面，支持浏览、搜索、摘要（可按情绪筛选）、「过去的今天」与随机回看 → [详细说明](webapp-backend/README.md)
 - 📊 **统计分析**：年度写作统计和趋势分析
 
 ## 系统要求
@@ -102,11 +102,16 @@ python scripts/yearly_stats.py
 用本地 LM Studio 模型逐篇阅读数据库中的日记，为**每一篇**写一段摘要
 
 详细见
-**[`scripts/batch_summary/README.md`](scripts/batch_summary/README.md)**。
+**[`batch_summary/README.md`](batch_summary/README.md)**。
 
 ### 4. 网页浏览（本地只读）
 
 在浏览器里回看日记：浏览 / 全文搜索 /「过去的今天」/ 随机一天。
+
+```bash
+cd webapp-frontend && npm ci && npm run build && cd ..   # 构建前端（只需一次，产物 dist/ 由后端托管）
+python webapp-backend/app.py                            # 启动后端，访问 http://127.0.0.1:8000
+```
 
 ### 5. 运行单元测试
 
@@ -115,7 +120,7 @@ python -m unittest discover -s tests -p "test_*.py"
 ```
 
 测试覆盖日记批量总结模块和 FastAPI 契约。API 测试依赖可通过
-`pip install -r webapp/requirements-dev.txt` 安装。
+`pip install -r webapp-backend/requirements-dev.txt` 安装。
 
 ## 项目结构
 
@@ -128,9 +133,10 @@ MyOwnDiaryRag/
 ├── create_diary_db.sql        # 所有表定义：日记表 + 摘要表 + FTS5 虚拟表（无触发器）
 ├── scripts/
 │   ├── import_diary_to_db.py  # 日记导入（智能识别文件类型）
-│   ├── yearly_stats.py        # 年度字数统计 + 趋势图
-│   └── batch_summary/         # 日记批量总结（本地 LLM）→ README.md
-├── webapp/                    # 本地只读 Web 浏览系统       → README.md
+│   └── yearly_stats.py        # 年度字数统计 + 趋势图
+├── batch_summary/             # 日记批量总结（本地 LLM，与 scripts/ 平级）→ README.md
+├── webapp-backend/            # 本地只读 Web 后端（FastAPI，托管前端产物）→ README.md
+├── webapp-frontend/           # React 前端源码（npm run build 产出 dist/）
 ├── tests/                     # 单元测试（无需真实 LLM）
 └── diary_database.db          # SQLite 数据库（被 .gitignore 忽略，需自行生成）
 ```
@@ -145,14 +151,14 @@ MyOwnDiaryRag/
 
 ## 注意事项
 
-- 数据库文件（`*.db`）、`.env` 配置与批量总结产物（`scripts/batch_summary/output/`）都不会被提交到 Git
+- 数据库文件（`*.db`）、`.env` 配置与批量总结产物（`batch_summary/output/`）都不会被提交到 Git
 - 所有数据处理都在本地进行，不会上传到云端
 - 建议定期备份数据库文件
 
 ## 相关文档
 
-- 日记批量总结（本地 LLM 逐篇写摘要）：[`scripts/batch_summary/README.md`](scripts/batch_summary/README.md)
-- Web 浏览系统（FastAPI 只读界面 + REST API）：[`webapp/README.md`](webapp/README.md)
+- 日记批量总结（本地 LLM 逐篇写摘要）：[`batch_summary/README.md`](batch_summary/README.md)
+- Web 浏览系统（FastAPI 只读界面 + REST API）：[`webapp-backend/README.md`](webapp-backend/README.md)
 
 ## License
 

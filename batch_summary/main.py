@@ -10,11 +10,11 @@
 
 常用命令：
 
-    python scripts/batch_summary/main.py --models             # 确认 LM Studio 实际模型名
-    python scripts/batch_summary/main.py --test --samples 10  # 抽样试跑（不写任何文件）
-    python scripts/batch_summary/main.py --all                # 全量（可 Ctrl+C，重跑自动续跑）
-    python scripts/batch_summary/main.py --years 2015-2019    # 分年跑
-    python scripts/batch_summary/main.py --rebuild-md         # 不调模型，用已有摘要重写预览
+    python batch_summary/main.py --models             # 确认 LM Studio 实际模型名
+    python batch_summary/main.py --test --samples 10  # 抽样试跑（不写任何文件）
+    python batch_summary/main.py --all                # 全量（可 Ctrl+C，重跑自动续跑）
+    python batch_summary/main.py --years 2015-2019    # 分年跑
+    python batch_summary/main.py --rebuild-md         # 不调模型，用已有摘要重写预览
 
 产物：**只有一个文件** —— 本次运行目录里的 中途预览.md
 
@@ -38,13 +38,13 @@ import time
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
-# 项目根目录加入 sys.path（保证 `python scripts/batch_summary/main.py` 也能绝对导入包）
-ROOT_DIR = Path(__file__).resolve().parents[2]
+# 项目根目录加入 sys.path（保证 `python batch_summary/main.py` 也能绝对导入包）
+ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-from scripts.batch_summary import config as bs_config  # noqa: E402
-from scripts.batch_summary import (  # noqa: E402
+from batch_summary import config as bs_config  # noqa: E402
+from batch_summary import (  # noqa: E402
     dal,
     emotion as emotion_mod,
     progress as progress_mod,
@@ -52,7 +52,7 @@ from scripts.batch_summary import (  # noqa: E402
     state as state_mod,
     summary,
 )
-from scripts.batch_summary.llm import (  # noqa: E402
+from batch_summary.llm import (  # noqa: E402
     LLMClient,
     LLMError,
     list_models,
@@ -68,7 +68,7 @@ from summary_fingerprint import (  # noqa: E402
     source_hash,
 )
 
-logger = logging.getLogger("scripts.batch_summary")
+logger = logging.getLogger("batch_summary")
 
 EXIT_OK, EXIT_ERROR, EXIT_NO_MODEL = 0, 1, 2
 
@@ -92,7 +92,7 @@ def fix_windows_console():
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="python scripts/batch_summary/main.py",
+        prog="python batch_summary/main.py",
         description="日记批量总结：用本地 LLM 为 SQLite 里的每一篇日记写一段摘要，生成按年份排列的目录。",
     )
     mode = parser.add_mutually_exclusive_group()
@@ -129,7 +129,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--output-dir",
-        help="输出根目录（默认 scripts/batch_summary/output）；产物放在其下的 YYMMDDHHMMSS 子目录里",
+        help="输出根目录（默认 batch_summary/output）；产物放在其下的 YYMMDDHHMMSS 子目录里",
     )
     parser.add_argument(
         "--flat-output",
@@ -296,7 +296,7 @@ def resolve_entry_types(args) -> List[str]:
 # ---------------- 数据准备 ----------------
 
 def load_entries(args, settings, entry_types: Sequence[str]) -> List[Dict]:
-    """通过共享只读 DAL（webapp/database.py）取出日记"""
+    """通过共享只读 DAL（根目录 database.py）取出日记"""
     years = parse_years(args)
     reader = dal.DiaryReader(settings["db_path"])
     entries = reader.entries(years=years, entry_types=entry_types)
@@ -567,7 +567,7 @@ def process_entries(
     * 摘要命中但情绪缺失/过期：只发一次情绪调用（``--emotion-only`` 就是这种模式）；
     * ``--force-emotion``：忽略情绪缓存重算（摘要仍按原有缓存规则）。
 
-    进度输出：传了 ``reporter`` → 由 :class:`~scripts.batch_summary.progress.ProgressReporter`
+    进度输出：传了 ``reporter`` → 由 :class:`~batch_summary.progress.ProgressReporter`
     统一打印心跳状态块（**只打印、不落盘**）；否则退回 ``progress`` 回调。
     中途查看结果：传了 ``preview`` → 期间节流刷新「中途预览.md」（不调模型）。
 
@@ -974,7 +974,7 @@ def _run_test_samples(args, settings, entries: List[Dict], reporter) -> int:
 
     reporter.set_phase("done", "抽样完成")
     print("")
-    print("抽样完成。满意后运行全量：python scripts/batch_summary/main.py --all")
+    print("抽样完成。满意后运行全量：python batch_summary/main.py --all")
     return EXIT_OK
 
 
@@ -1128,7 +1128,7 @@ def cmd_rebuild(args, settings, paths: Dict[str, Path]) -> int:
         database_records = repository.all_records()
         if not database_records:
             print(f"[错误] 数据库中未找到摘要：{settings['db_path']}")
-            print("请先运行：python scripts/batch_summary/main.py --all")
+            print("请先运行：python batch_summary/main.py --all")
             return EXIT_ERROR
 
         records = [record for record in database_records if record.get("status") == "ok"]

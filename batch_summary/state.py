@@ -12,7 +12,7 @@
 * :func:`now_iso` —— 统一的时间戳格式；
 * :func:`has_summary` —— 判断一条记录里有没有可用摘要。
 
-产物只有一个「中途预览.md」（见 :mod:`scripts.batch_summary.render`），
+产物只有一个「中途预览.md」（见 :mod:`batch_summary.render`），
 不再生成 summaries.json / progress.json / 运行状态.txt / 待复核清单 / 日志文件。
 """
 
@@ -20,7 +20,7 @@ import logging
 from datetime import datetime
 from typing import Dict
 
-LOGGER_NAME = "scripts.batch_summary"
+LOGGER_NAME = "batch_summary"
 
 
 def now_iso() -> str:

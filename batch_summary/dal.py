@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import List, Optional, Sequence
 
 from database import Database
-from scripts.batch_summary import config as bs_config
+from batch_summary import config as bs_config
 
 
 class DiaryReader:

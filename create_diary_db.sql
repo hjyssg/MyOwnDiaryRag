@@ -37,7 +37,7 @@ CREATE TABLE IF NOT EXISTS diary_stats (
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 -- ============================================================================
--- 以下为摘要相关表（scripts/batch_summary 写入，Web 只读）
+-- 以下为摘要相关表（batch_summary 写入，Web 只读）
 -- 这里是"最终形态"（含情绪列）：新建库一次到位，旧库缺列由
 -- SummaryStore.migrate() 自动补齐（见 summary_database.py 的 LEGACY_COLUMNS）。
 -- ============================================================================

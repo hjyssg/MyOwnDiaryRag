@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""FastAPI JSON API 与 React 生产包入口。"""
+"""FastAPI JSON API 与 React 生产包入口。
+
+本目录名 ``webapp-backend`` 带连字符，不能作为 Python 包名导入，因此包内模块一律
+按「本目录在 sys.path 中」的扁平方式导入（``from routers.x import ...``）；
+根目录的 ``config.py`` / ``database.py`` / ``summary_database.py`` 则通过下面插入的
+项目根目录导入。
+"""
 
 import sqlite3
 import sys
@@ -13,11 +19,11 @@ from fastapi import FastAPI, HTTPException, Request  # noqa: E402
 from fastapi.responses import FileResponse, JSONResponse  # noqa: E402
 from fastapi.staticfiles import StaticFiles  # noqa: E402
 
-from webapp.routers.calendar import router as calendar_router  # noqa: E402
-from webapp.routers.entries import router as entries_router  # noqa: E402
-from webapp.routers.summaries import router as summaries_router  # noqa: E402
+from routers.calendar import router as calendar_router  # noqa: E402
+from routers.entries import router as entries_router  # noqa: E402
+from routers.summaries import router as summaries_router  # noqa: E402
 
-FRONTEND_DIST = ROOT_DIR / "frontend" / "dist"
+FRONTEND_DIST = ROOT_DIR / "webapp-frontend" / "dist"
 
 app = FastAPI(
     title="日记浏览系统",
@@ -47,7 +53,7 @@ def spa_fallback(full_path: str):
         raise HTTPException(status_code=404, detail="接口不存在")
     index = FRONTEND_DIST / "index.html"
     if not index.is_file():
-        raise HTTPException(status_code=503, detail="前端尚未构建，请先运行 cd frontend && npm run build")
+        raise HTTPException(status_code=503, detail="前端尚未构建，请先运行 cd webapp-frontend && npm run build")
     return FileResponse(index)
 
 
