@@ -10,12 +10,39 @@ from typing import Iterable, Optional
 
 from summary_fingerprint import canonical_json, source_hash
 
-MIGRATIONS_DIR = Path(__file__).parent / "migrations" / "summaries"
-LATEST_SCHEMA_VERSION = 2
+SCHEMA_FILE = Path(__file__).parent / "create_diary_db.sql"   # 唯一 DDL 来源（日记表 + 摘要表）
+
+# 早期版本建的摘要表缺少这些列：migrate() 按"列不存在才 ALTER"补齐，不动已有数据。
+LEGACY_COLUMNS = {
+    "entry_summaries": (
+        ("emotion", "TEXT NOT NULL DEFAULT ''"),
+        ("emotion_status", "TEXT"),
+        ("emotion_cache_key", "TEXT"),
+        ("emotion_algorithm_fingerprint", "TEXT"),
+        ("emotion_error", "TEXT"),
+    ),
+    "summary_runs": (
+        ("emotion_algorithm_fingerprint", "TEXT"),
+    ),
+}
 
 
 def now_iso() -> str:
     return datetime.now().isoformat(timespec="seconds")
+
+
+def column_exists(connection: sqlite3.Connection, table: str, column: str) -> bool:
+    """表里是否已有该列（表不存在时返回 False）"""
+    rows = connection.execute(f"PRAGMA table_info({table})").fetchall()
+    return any(row[1] == column for row in rows)
+
+
+def table_exists(connection: sqlite3.Connection, table: str) -> bool:
+    """这是否是一张已存在的普通表"""
+    row = connection.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)
+    ).fetchone()
+    return row is not None
 
 
 def tables_exist(connection: sqlite3.Connection) -> bool:
@@ -40,24 +67,23 @@ class SummaryStore:
         return connection
 
     def migrate(self) -> None:
+        """确保库结构就绪（不重建表、不动已有数据）
+
+        * 先给"已存在但缺列"的老摘要表补列（索引可能依赖这些列）；
+        * 再执行唯一 DDL 来源 ``create_diary_db.sql``（全是 IF NOT EXISTS）建缺的表与索引。
+        """
         with self.connect() as connection:
-            connection.execute(
-                "CREATE TABLE IF NOT EXISTS summary_schema_migrations "
-                "(version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)"
-            )
-            applied = {row[0] for row in connection.execute("SELECT version FROM summary_schema_migrations")}
-            unknown = [version for version in applied if version > LATEST_SCHEMA_VERSION]
-            if unknown:
-                raise RuntimeError(f"摘要数据库版本不受支持：{max(unknown)}")
-            for path in sorted(MIGRATIONS_DIR.glob("*.sql")):
-                version = int(path.name.split("_", 1)[0])
-                if version in applied:
-                    continue
-                connection.executescript(path.read_text(encoding="utf-8"))
-                connection.execute(
-                    "INSERT INTO summary_schema_migrations(version, applied_at) VALUES (?, ?)",
-                    (version, now_iso()),
-                )
+            self._upgrade_legacy_columns(connection)
+            connection.executescript(SCHEMA_FILE.read_text(encoding="utf-8"))
+
+    def _upgrade_legacy_columns(self, connection: sqlite3.Connection) -> None:
+        """按 :data:`LEGACY_COLUMNS` 给老表补列；表不存在就跳过（交给建表 SQL）"""
+        for table, columns in LEGACY_COLUMNS.items():
+            if not table_exists(connection, table):
+                continue
+            for column, definition in columns:
+                if not column_exists(connection, table, column):
+                    connection.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
     def register_algorithm(self, fingerprint: str, payload: dict) -> None:
         parameters = {k: v for k, v in payload.items() if k not in {"algorithm_version", "prompt_hash", "model"}}

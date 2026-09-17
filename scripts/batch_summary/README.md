@@ -1,130 +1,67 @@
 # 日记批量摘要
 
-使用 LM Studio 的 OpenAI-compatible 本地接口逐篇生成摘要，并为每篇额外判断一个**情绪标签**。
-原始正文、摘要与情绪都保存在 `DATABASE_PATH` 指向的同一个 SQLite 文件中；
-所有模型请求默认只允许本机地址。
+用本地 LM Studio 逐篇给日记写摘要，并额外判断一个情绪标签。
+结果存在 `.env` 里 `DATABASE_PATH` 指向的同一个 SQLite 中，只调用本机模型。
 
-## 使用
+## 快速开始
 
 ```bash
-python scripts/batch_summary/main.py --models
-python scripts/batch_summary/main.py --test --samples 10
-python scripts/batch_summary/main.py --all
-python scripts/batch_summary/main.py --year 2024
-python scripts/batch_summary/main.py --rebuild-md
-python scripts/batch_summary/main.py --emotion-only     # 只补情绪（摘要复用已有结果）
+python scripts/batch_summary/main.py --models              # 先确认模型名（需要 LM Studio 已启动）
+python scripts/batch_summary/main.py --test --samples 10   # 抽样试跑：只打印，不写文件
+python scripts/batch_summary/main.py --all                 # 全量（可 Ctrl+C，重跑自动续跑）
 ```
 
-`--all` 首次运行会执行 `migrations/summaries/`，并创建：
+产物只有一个文件：`output/YYMMDDHHMMSS/中途预览.md`
+（运行期间每 60 秒刷新一次，跑完重写成最终版）。
 
-- `summary_algorithms`：算法指纹与参数审计（摘要与情绪各一套指纹）；
-- `entry_summaries`：每篇日记当前摘要 + 情绪标签；
-- `summary_runs`：批处理运行状态（同时记录本轮使用的摘要/情绪算法指纹）；
-- `summary_schema_migrations`：schema 版本。
-
-SQLite 是唯一主状态（摘要 + 情绪 + 断点续跑），产物只有一个文件。
-每篇摘要/情绪处理结束后立即提交，因此中断后已提交记录不会丢失。
-
-## 产物：只有一个文件
-
-```
-output/YYMMDDHHMMSS/
-└── 中途预览.md          # 唯一文件（运行期=快照，跑完=最终版）
-```
-
-- 运行期间：`# 日记总结（中途预览）` + 进度行 + 已总结的内容（默认每 60 秒刷新）；
-- 跑完：同一个文件被重写为最终版（`# 日记总结` + 全部内容）；
-- 中断：重写为中断时的快照，重跑同一命令即可续跑；
-- `--no-preview`：什么都不写（结果都在 SQLite 里，随时可用 `--rebuild-md` 重写）。
-
-除此之外**不生成任何中间文件**：没有 `summaries.json`、`progress.json`、`运行状态.txt`、
-日志文件、`待复核` 清单，也没有旧版的 `summary_state.json`（断点续跑改由 SQLite 承担）。
-每行都是「日期 +【情绪】+ 摘要」（`--no-emotion` / 情绪判断失败 / 空正文的篇目省略方括号）。
-
-## 情绪判断（摘要之外的第二条数据）
-
-每篇日记在摘要之后**再发一次很短的请求**，模型只回一个标签词（例如 `快乐`），Python 负责归一化：
-
-- 标签集来自根 `.env` 的 `EMOTION_LABELS`（逗号分隔、保序、去重；**最后一项是兜底标签**），
-  batch 与 Web 共用同一份定义；
-- 归一顺序：精确标签 → 别名（`开心`→`快乐`）→ 输出里包含标签 → 输出里包含别名 → 兜底标签；
-  兜底时记一条 warning，日志里能看到模型的原始输出，便于调整 Prompt；
-- 情绪 Prompt 在 `prompts/diary_emotion_prompt.txt`（占位符 `{DATE}` / `{ENTRY_TYPE}` / `{CONTENT}` / `{LABELS}`）；
-- 调用参数与摘要不同：`temperature=0`、`max_tokens=LLM_EMOTION_MAX_TOKENS`（默认 32）、不请求 JSON 模式。
-
-常用开关：
+## 常用命令
 
 | 命令 | 作用 |
-|------|------|
-| `--no-emotion` | 本轮只写摘要，不判断情绪（等价于 `.env` 的 `EMOTION_ENABLED=0`） |
-| `--emotion-only` | 摘要一律复用，只为缺情绪/情绪过期的篇目各发一次调用（老库补情绪用这个） |
-| `--force-emotion` | 忽略情绪缓存重算情绪（摘要仍按原有缓存规则） |
+|---|---|
+| `--models` | 列出 LM Studio 可见的模型 |
+| `--test --samples 10` | 抽样 10 篇试跑，只打印 |
+| `--all` | 全量生成；中断后重跑同一条命令即续跑 |
+| `--year 2024` / `--years 2020-2024` | 只跑指定年份 |
+| `--emotion-only` | 只补情绪，摘要复用 |
+| `--force-emotion` | 重算情绪（摘要仍按缓存） |
+| `--rebuild-md` | 不调模型，用库里已有摘要重写预览 |
+| `--reset-summaries` | 清空摘要表（含情绪），不动原始日记 |
+| `--no-preview` | 不写任何文件，只打印进度 |
 
-情绪结果会写入 `entry_summaries.emotion / emotion_status`，网页端「日记摘要」页可按下拉筛选；
-同时预览文件的每一行会带上 `【标签】`（如 `- 0120【快乐】今天去公园散步……`），
-标签来自模型判断，Markdown 这一层不做任何猜测。`--emotion-only` 只补情绪时，
-预览同样会因为情绪条数变化而重排，不必等跑完。
+## 什么时候会重新调用模型？
 
-## 缓存规则
+默认走缓存：同一篇只要**日期 + 类型 + 正文**没变，就不会再调用模型。
+摘要与情绪的缓存彼此独立。
 
-缓存键由以下内容的 SHA-256 确定（摘要与情绪**各自独立**，互不使对方失效）：
+| 你改了什么 | 结果 |
+|---|---|
+| 想全部重算 | `--all --force`（摘要）＋ `--force-emotion`（情绪） |
+| 摘要 Prompt | 摘要全部重算 |
+| `LLM_MODEL` / `LLM_TEMPERATURE` / `LLM_MAX_TOKENS` / `LLM_JSON_MODE` / `LLM_REASONING_EFFORT` | 摘要全部重算 |
+| 情绪 Prompt / `EMOTION_LABELS` / `LLM_EMOTION_MAX_TOKENS` | 只有情绪重算，摘要不受影响 |
+| `LLM_TIMEOUT` / `LLM_BASE_URL` / 心跳与预览间隔 | 不重算 |
+| 重新导入日记（`import_diary_to_db.py`） | 不自动全量重算；只有正文或日期/类型变了的篇目会重算 |
 
-- 稳定条目键 `v1:{date}:{entry_type}`；
-- 完整原始正文 SHA-256；
-- 摘要：Prompt、实际模型、temperature、max tokens、reasoning effort、JSON mode、截断长度、
-  清洗版本及摘要长度共同组成的算法指纹；
-- 情绪：情绪 Prompt、标签集（含兜底标签）、label 版本、实际模型、分类参数共同组成的算法指纹。
+注意事项：
 
-相同缓存键的 `ok` 和 `empty` 会复用；`failed` 会重试；`--force` 无条件重新生成。
-因此「改情绪标签 / 改情绪 Prompt / 只补情绪」都不会让已跑完的摘要失效。
-重新导入导致数据库自增 ID 变化时，只要日期、类型和正文不变，仍会复用摘要与情绪。
+- `--all` 默认**不含** `stock_diary`（炒股流水），要一起处理加 `--include-stock`；
+- `--force` 只管摘要，情绪仍走缓存；
+- `failed` 的篇目下次会自动重试。
 
-## 范围与清理
+## 数据库
 
-默认处理除 `stock_diary` 外的全部类型。支持：
+所有表定义集中在根目录 `create_diary_db.sql`（含 FTS5 虚拟表，无触发器）：
 
-```bash
---year 2024
---years 2020-2024
---types single_day,note
---include-stock
---limit 10
---emotion-only            # 只补情绪（摘要复用），可与 --year / --years 组合
-```
+- `diary_entries` / `diary_fts` / `diary_stats`：原始日记、全文索引、年度统计；
+- `entry_summaries`：每篇的摘要 + 情绪（batch 是唯一写入者，Web 只读）；
+- `summary_algorithms`：算法指纹与参数（改 Prompt / 换模型会新增一条）；
+- `summary_runs`：每次运行的状态与统计。
 
-成功完成且未使用 `--limit` 时，仅清理本次 scope 中已经不存在的 orphan。中断、连续失败或
-限制条数运行不会误删其他摘要。
-
-## 导出与重置
-
-`--rebuild-md` 完全不调用模型，从 SQLite 重新写出当前运行目录里的 `中途预览.md`（最终版）：
-
-```bash
-python scripts/batch_summary/main.py --rebuild-md
-```
-
-只重建派生摘要数据时使用：
-
-```bash
-python scripts/batch_summary/main.py --reset-summaries
-```
-
-该命令只清空摘要相关表（含情绪），不修改 `diary_entries`、`diary_fts` 或 `diary_stats`。
-不要删除整个数据库。
-
-## 进度与安全
-
-- `--heartbeat SECONDS` / `--no-heartbeat`：控制台状态块的打印间隔（**只打印，不落盘**）
-- `--preview-every SECONDS` / `--no-preview`：预览刷新间隔；`--no-preview` = 不写任何文件
-- 状态块会额外显示情绪计数（有情绪 / 情绪失败 / 情绪跳过）
-- 默认绑定本地 LM Studio；只有显式 `ALLOW_REMOTE_LLM=1` 才允许远程地址。
-- 日志与错误字段不保存完整正文或 Prompt（日志只打到控制台）。
-- Web 使用只读连接，batch 是摘要表（含情绪列）的唯一写入者。
+`create_diary_db.sql` 全部用 `IF NOT EXISTS` 写成，可重复执行：`--all` 会先跑它补齐缺的表；
+早期版本建的摘要表若缺情绪列，会自动补列（不重建表、不动已有数据）。
 
 ## 测试
 
 ```bash
 python -m unittest discover -s tests -p "test_*.py"
 ```
-
-pipeline 测试使用 fake client，不需要启动 LM Studio。

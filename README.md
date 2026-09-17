@@ -125,7 +125,7 @@ MyOwnDiaryRag/
 ├── .env.example               # 配置模板（复制为 .env 后修改路径）
 ├── config.py                  # 读取根目录 .env（DATABASE_PATH / DIARY_BASE_PATH）
 ├── database.py                # 只读 Database 类：所有 SQL 都封装在这里
-├── create_diary_db.sql        # 建表 SQL（含 FTS5 虚拟表与触发器）
+├── create_diary_db.sql        # 所有表定义：日记表 + 摘要表 + FTS5 虚拟表（无触发器）
 ├── scripts/
 │   ├── import_diary_to_db.py  # 日记导入（智能识别文件类型）
 │   ├── yearly_stats.py        # 年度字数统计 + 趋势图
