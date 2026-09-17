@@ -6,16 +6,21 @@
 
     # 日记总结
 
-    > 每篇日记一段摘要；日期取自日记本身的日期（MMDD）。同一天有多篇日记时各占一行。
+    > 每篇日记一段摘要；日期取自日记本身的日期（MMDD），【】里是情绪标签（未判断时省略）。同一天有多篇日记时各占一行。
 
     ## 2015年
 
-    - 0120 今天去公园散步，全家都很开心……
-    - 0303 周末去郊外走了两天，天气很好……
-    - 0101 新年回顾：去年的计划完成了大半……
+    - 0120【快乐】今天去公园散步，全家都很开心……
+    - 0303【平淡】周末去郊外走了两天，天气很好……
+    - 0101【期待】新年回顾：去年的计划完成了大半……
 
 日期标签直接取数据库里的日期（``MMDD``），不问模型，也不做区间合并：
 每篇日记都有自己的一行摘要。
+
+情绪标签同理，直接取 :mod:`scripts.batch_summary.emotion` 归一化后的结果，
+这一层不做任何判断：只有判断成功（``emotion`` 非空）才输出 ``【标签】``，
+``--no-emotion`` / 判断失败 / 空正文时方括号整段省略——因此关掉情绪功能时，
+输出与旧版逐字一致。
 """
 
 import re
@@ -24,7 +29,7 @@ from typing import Dict, List, Optional
 
 DEFAULT_TITLE = "# 日记总结"
 UNKNOWN_LABEL = "日期不详"
-HEADER_NOTE = "> 每篇日记一段摘要；日期取自日记本身的日期（MMDD）。同一天有多篇日记时各占一行。"
+HEADER_NOTE = "> 每篇日记一段摘要；日期取自日记本身的日期（MMDD），【】里是情绪标签（未判断时省略）。同一天有多篇日记时各占一行。"
 
 _DAY_RE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})")
 _MONTH_RE = re.compile(r"^(\d{4})-(\d{2})")
@@ -53,8 +58,24 @@ def format_date_label(record: Dict) -> str:
     return UNKNOWN_LABEL
 
 
+def format_emotion_label(record: Dict) -> str:
+    """情绪标签（行内 ``【】`` 里的那个词）：没有情绪时返回空串
+
+    只有判断成功（``emotion`` 非空）的记录才有标签；``--no-emotion``、
+    判断失败、空正文都拿不到标签，此时方括号整段省略（输出与旧格式一致）。
+    """
+    return str((record or {}).get("emotion") or "").strip()
+
+
 def render_sections(records: List[Dict]) -> List[str]:
-    """年份小标题 + 每篇一行摘要（``render_markdown`` 与中途预览共用，正文永远一致）"""
+    """年份小标题 + 每篇一行「日期 + 情绪标签 + 摘要」
+
+    ``render_markdown``（最终 ``日记总结.md``）与中途预览共用本函数，
+    两边正文永远逐行一致。
+
+    有情绪：``- 0120【快乐】今天去公园散步……``
+    无情绪：``- 0120 今天去公园散步……``（关掉情绪功能时输出不变）
+    """
     lines: List[str] = []
     current_year = None
 
@@ -69,7 +90,10 @@ def render_sections(records: List[Dict]) -> List[str]:
             lines.append(f"## {year}年" if year else "## 年份不详")
             lines.append("")
             current_year = year
-        lines.append(f"- {format_date_label(record)} {summary}")
+        emotion = format_emotion_label(record)
+        # 有情绪时标签紧跟日期；没有情绪时补一个空格，保持旧格式不变
+        tag = f"【{emotion}】" if emotion else " "
+        lines.append(f"- {format_date_label(record)}{tag}{summary}")
     return lines
 
 

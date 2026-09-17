@@ -23,6 +23,8 @@ python scripts/batch_summary/main.py --emotion-only     # 只补情绪（摘要�
 - `summary_schema_migrations`：schema 版本。
 
 SQLite 是唯一摘要主状态。Markdown、JSON、中途预览、进度和待复核文件均为派生产物。
+`日记总结.md` 与 `中途预览.md` 的每行都是「日期 +【情绪】+ 摘要」，两边正文逐行一致
+（`--no-emotion` / 情绪判断失败 / 空正文的篇目省略方括号）。
 每篇摘要/情绪处理结束后立即提交，因此中断后已提交记录不会丢失。
 
 ## 情绪判断（摘要之外的第二条数据）
@@ -44,7 +46,10 @@ SQLite 是唯一摘要主状态。Markdown、JSON、中途预览、进度和待�
 | `--emotion-only` | 摘要一律复用，只为缺情绪/情绪过期的篇目各发一次调用（老库补情绪用这个） |
 | `--force-emotion` | 忽略情绪缓存重算情绪（摘要仍按原有缓存规则） |
 
-情绪结果会写入 `entry_summaries.emotion / emotion_status`，网页端「日记摘要」页可按下拉筛选。
+情绪结果会写入 `entry_summaries.emotion / emotion_status`，网页端「日记摘要」页可按下拉筛选；
+同时 `日记总结.md` / `中途预览.md` 的每一行会带上 `【标签】`（如 `- 0120【快乐】今天去公园散步……`），
+标签来自模型判断，Markdown 这一层不做任何猜测。`--emotion-only` 只补情绪时，
+中途预览同样会因为情绪条数变化而重排，不必等最终产物。
 
 ## 缓存规则
 

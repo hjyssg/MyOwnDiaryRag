@@ -18,7 +18,7 @@
 
 产物（每次运行放在 scripts/batch_summary/output/YYMMDDHHMMSS/ 子目录里，历史互不覆盖）：
 
-    日记总结.md           最终目录：每篇日记一行摘要（整轮跑完才写）
+    日记总结.md           最终目录：每篇日记一行「日期 +【情绪】+ 摘要」（整轮跑完才写）
     中途预览.md           运行期间的"截至当前"目录（默认每 60 秒刷新，随时可打开）
     summaries.json        结构化中间结果（每篇一条摘要记录）
     progress.json         实时进度快照（status.py 读它）
@@ -40,7 +40,7 @@ import random
 import sys
 import time
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence
+from typing import Dict, List, Optional, Sequence, Tuple
 
 # 项目根目录加入 sys.path（保证 `python scripts/batch_summary/main.py` 也能绝对导入包）
 ROOT_DIR = Path(__file__).resolve().parents[2]
@@ -428,6 +428,18 @@ write_progress_file = progress_mod.write_progress_file
 
 # ---------------- 中途预览（运行期间可随时打开） ----------------
 
+def body_signature(summary_state) -> Tuple[int, int]:
+    """中途预览正文的"要不要重排"指纹：``(摘要条数, 情绪条数)``
+
+    摘要条数足以覆盖正常运行（每篇摘要与情绪一起产出）；``--emotion-only``
+    只补情绪、摘要条数不变，只能靠情绪条数触发重排，否则预览里的 ``【标签】``
+    永远不会出现。老的状态对象没有 ``emotion_count`` 时按 0 处理。
+    """
+    counter = getattr(summary_state, "emotion_count", None)
+    emotion_count = int(counter()) if callable(counter) else 0
+    return int(summary_state.summary_count()), emotion_count
+
+
 class PreviewWriter:
     """运行期"中途预览"：节流重写 ``<运行目录>/中途预览.md``
 
@@ -439,7 +451,8 @@ class PreviewWriter:
     * 只读内存状态：不读盘、不调模型、**不写 progress.json、不新建运行目录**，
       因此不会干扰 ``status.py`` 对"最近一次运行"的判断；
     * 节流：距上次写入不足 ``every`` 秒就直接跳过；
-    * 正文缓存：摘要条数没变化时沿用上次渲染的正文（省掉一次重排），只更新头部进度；
+    * 正文缓存：``(摘要条数, 情绪条数)`` 没变化时沿用上次渲染的正文（省掉一次重排），
+      只更新头部进度；
     * 任何异常都吞掉（写文件失败绝不算任务失败）；``enabled=False`` 时完全不碰文件。
 
     典型用法（``main.py`` 里）::
@@ -457,7 +470,7 @@ class PreviewWriter:
         self.enabled = bool(enabled) and self.path is not None and self.every > 0
         self.writes = 0                                    # 实际写了几次（测试用）
         self._last_write: Optional[float] = None
-        self._last_summaries = -1                          # 上次渲染正文时的摘要条数
+        self._last_signature: Optional[Tuple[int, int]] = None   # 上次渲染正文时的指纹
         self._body: Optional[List[str]] = None
         self._processed = 0
         self._total = 0
@@ -486,11 +499,11 @@ class PreviewWriter:
     # -- 内部 --
     def _write(self, summary_state, *, current=None, phase="running") -> bool:
         try:
-            summary_count = summary_state.summary_count()
-            if self._body is None or summary_count != self._last_summaries:
+            signature = body_signature(summary_state)
+            if self._body is None or signature != self._last_signature:
                 records = collect_summaries(summary_state)     # 与最终产物同一套渲染逻辑
                 self._body = render.render_sections(records)
-                self._last_summaries = summary_count
+                self._last_signature = signature
             text = render.compose_preview(
                 render.preview_header(
                     processed=self._processed, total=self._total,
@@ -523,7 +536,15 @@ class DatabaseSummaryView:
     def summary_count(self):
         return sum(state_mod.has_summary(record) for record in self.results.values())
 
+    def emotion_count(self):
+        """已有情绪标签的条目数（中途预览据此判断"情绪有没有新增"）"""
+        return sum(
+            1 for record in self.results.values()
+            if str(record.get("emotion") or "").strip()
+        )
+
     def summary_records(self):
+        """已产出摘要的记录（DB 视图里的 ``emotion`` / ``emotion_status`` 会一并透出）"""
         records = [record for record in self.results.values() if state_mod.has_summary(record)]
         return sorted(records, key=lambda r: (str(r.get("entry_date") or ""), int(r.get("entry_id") or 0)))
 

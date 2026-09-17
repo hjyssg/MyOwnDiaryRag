@@ -145,6 +145,20 @@ class StateTests(unittest.TestCase):
         self.assertFalse(state_mod.has_summary({"summary": "  "}))
         self.assertTrue(state_mod.has_summary({"summary": "有"}))
 
+    def test_summary_records_carry_emotion(self):
+        """断点状态里的情绪要透出给渲染层：有标签带【】，没标签保持旧格式"""
+        st = state_mod.SummaryState(path=self.path)
+        st.put(1, {"entry_id": 1, "entry_date": "2015-01-20", "status": "ok",
+                   "summary": "整理旧照片。", "emotion": "平淡", "emotion_status": "ok"})
+        st.put(2, {"entry_id": 2, "entry_date": "2015-01-21", "status": "ok",
+                   "summary": "被同事甩锅。", "emotion": "", "emotion_status": "failed"})
+        records = st.summary_records()
+        self.assertEqual([r["emotion"] for r in records], ["平淡", ""])
+        self.assertEqual([r["emotion_status"] for r in records], ["ok", "failed"])
+        self.assertEqual(st.emotion_count(), 1)
+        self.assertIn("- 0120【平淡】整理旧照片。", render.render_sections(records))
+        self.assertIn("- 0121 被同事甩锅。", render.render_sections(records))
+
 
 class PipelineTests(unittest.TestCase):
     def setUp(self):

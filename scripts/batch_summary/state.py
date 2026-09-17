@@ -137,8 +137,22 @@ class SummaryState:
         """已产出摘要的条目数（中途预览用它判断"有没有新内容"）"""
         return sum(1 for record in self.results.values() if has_summary(record))
 
+    def emotion_count(self) -> int:
+        """已产出情绪标签的条目数（中途预览用它判断"情绪有没有新增"）
+
+        ``--emotion-only`` 只补情绪、摘要条数不变，只能靠这个计数触发预览重排。
+        """
+        return sum(
+            1 for record in self.results.values()
+            if str(record.get("emotion") or "").strip()
+        )
+
     def summary_records(self) -> List[Dict]:
-        """所有条目的摘要记录（带 entry_* 元信息），按 (日期, id) 升序"""
+        """所有条目的摘要记录（带 entry_* 元信息与情绪），按 (日期, id) 升序
+
+        ``emotion`` 只在该篇情绪判断成功（``emotion_status == "ok"``）时非空；
+        渲染层据此决定要不要输出 ``【标签】``。
+        """
         records: List[Dict] = []
         for record in sorted(
             self.results.values(),
@@ -153,6 +167,8 @@ class SummaryState:
                 "entry_type": record.get("entry_type"),
                 "word_count": record.get("word_count"),
                 "summary": summary,
+                "emotion": str(record.get("emotion") or ""),
+                "emotion_status": record.get("emotion_status"),
             })
         return records
 

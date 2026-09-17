@@ -129,6 +129,20 @@ class PreviewRenderTests(unittest.TestCase):
         self.assertIn("- 0710 去郊外旅游。", preview)
         self.assertIn("- 0305 换了新工作。", preview)
 
+    def test_body_with_emotion_matches_final_markdown(self):
+        """带【情绪】的正文同样在预览与最终 日记总结.md 之间逐行一致"""
+        records = [
+            make_record(1, "2015-01-20", "整理旧照片。") | {"emotion": "平淡"},
+            make_record(2, "2015-07-10", "去郊外旅游。") | {"emotion": "快乐"},
+        ]
+        preview = render.render_preview(records, processed=2, total=2, phase="done", now=NOW)
+        final = render.render_markdown(records)
+        expected = render.render_sections(records)
+        self.assertEqual(preview.splitlines()[5:], expected)
+        self.assertEqual(final.splitlines()[4:], expected)
+        self.assertIn("- 0120【平淡】整理旧照片。", preview)
+        self.assertIn("- 0710【快乐】去郊外旅游。", preview)
+
     def test_empty_body_gets_hint(self):
         text = render.render_preview([], processed=0, total=10, every=60, now=NOW)
         self.assertIn("目前还没有摘要", text)
@@ -241,6 +255,23 @@ class PreviewWriterTests(unittest.TestCase):
             self.assertIn("去郊外旅游", self.path.read_text(encoding="utf-8"))
         finally:
             bs_main.collect_summaries = original
+
+    def test_new_emotion_alone_triggers_rerender(self):
+        """--emotion-only：摘要条数不变、只补情绪，也要重排正文（否则【标签】永不出现）"""
+        writer = bs_main.PreviewWriter(self.path, every=3600)
+        self.assertTrue(writer.maybe(self.state, processed=1, total=10))      # 第一次必写
+        self.assertIn("- 0120 今天去公园散步，全家都很开心。",
+                      self.path.read_text(encoding="utf-8"))
+
+        record = self.state.get(1)
+        record["emotion"] = "快乐"
+        record["emotion_status"] = "ok"
+        self.state.put(1, record)                                            # 摘要条数没变
+
+        self.assertTrue(writer.finish(self.state, processed=1, total=10, phase="running"))
+        text = self.path.read_text(encoding="utf-8")
+        self.assertIn("- 0120【快乐】今天去公园散步，全家都很开心。", text)
+        self.assertEqual(bs_main.body_signature(self.state), (1, 1))
 
     def test_write_failure_is_silent(self):
         blocker = self.tmp / "blocker"

@@ -6,6 +6,7 @@ from pathlib import Path
 
 from scripts.batch_summary import config as bs_config
 from scripts.batch_summary import main as batch
+from scripts.batch_summary import render
 from scripts.batch_summary.state import SummaryState
 from summary_database import SummaryRepository, SummaryStore
 from summary_fingerprint import algorithm_fingerprint, algorithm_payload, emotion_payload
@@ -247,6 +248,23 @@ class EmotionPipelineTests(unittest.TestCase):
         stats = self.execute(client, classifier=self.classifier(client, emotion_fp, enabled=False))
         self.assertEqual((client.call_count, stats["emotions"]), (2, 0))
         self.assertEqual(self.emotions()["2024-09-17"][1], "missing")
+
+    def test_markdown_and_preview_carry_emotion_labels(self):
+        """DB 记录（status=ok）渲染出的每行带【标签】，预览重排指纹能感知情绪变化"""
+        _, emotion_fp = self.fingerprints()
+        client = EmotionClient(label="生气")
+        self.execute(client, classifier=self.classifier(client, emotion_fp))
+
+        records = SummaryRepository(self.path).all_records()
+        self.assertIn("- 0917【生气】整理工作并和朋友吃饭。", render.render_sections(records))
+        self.assertIn("- 0917【生气】整理工作并和朋友吃饭。", render.render_markdown(records))
+
+        view = batch.DatabaseSummaryView(records)
+        self.assertEqual(view.emotion_count(), 2)
+        self.assertEqual(batch.body_signature(view), (2, 2))
+        # 情绪被清掉后指纹变化：--emotion-only 补情绪时中途预览才会重排
+        view.put(1, dict(view.get(1), emotion="", emotion_status="missing"))
+        self.assertEqual(batch.body_signature(view), (2, 1))
 
     def emotions(self):
         return {row["entry_date"]: (row["emotion"], row["emotion_status"])

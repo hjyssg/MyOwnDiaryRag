@@ -324,6 +324,34 @@ class RenderTests(unittest.TestCase):
             render.render_markdown(records), "# 日记总结\n\n" + render.HEADER_NOTE + "\n"
         )
 
+    def test_markdown_shows_emotion_label(self):
+        """有情绪判断的行：日期后面紧跟【标签】（预览与最终产物共用同一套渲染）"""
+        records = [
+            make_record(1, "2015-01-20", "周末去公园散步。", emotion="快乐"),
+            make_record(2, "2015-01-21", "被同事甩锅。", emotion="生气", emotion_status="ok"),
+            make_record(3, "2015-01-22", "照常上班。"),
+        ]
+        lines = render.render_sections(records)
+        self.assertIn("- 0120【快乐】周末去公园散步。", lines)
+        self.assertIn("- 0121【生气】被同事甩锅。", lines)
+        self.assertIn("- 0122 照常上班。", lines)              # 没判断情绪 -> 保持旧格式
+        markdown = render.render_markdown(records)
+        self.assertIn("- 0120【快乐】周末去公园散步。", markdown)
+        self.assertEqual(render.count_lines(markdown), 3)
+
+    def test_blank_or_missing_emotion_keeps_old_format(self):
+        """--no-emotion / 判断失败 / 空正文都拿不到标签，行格式与旧版逐字一致"""
+        records = [
+            make_record(1, "2015-01-20", "周末去公园散步。", emotion=""),
+            make_record(2, "2015-01-20", "周末去公园散步。", emotion="   "),
+            make_record(3, "2015-01-20", "周末去公园散步。",
+                        emotion=None, emotion_status="failed"),
+        ]
+        for record in records:
+            with self.subTest(record=record):
+                self.assertEqual(render.format_emotion_label(record), "")
+                self.assertIn("- 0120 周末去公园散步。", render.render_sections([record]))
+
     def test_date_labels_and_years(self):
         self.assertEqual(render.format_date_label({"entry_date": "2015-01-20"}), "0120")
         self.assertEqual(render.format_date_label({"entry_date": "2015-03"}), "03月")

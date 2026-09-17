@@ -4,6 +4,10 @@
 # 数据库文件
 *.db
 *.db-journal
+# SQLite WAL 模式的两个伴生文件：可能含"最近写入还没检查点"的数据页（也就是日记正文），
+# 必须忽略，否则一次 git add -A 就可能把它们提交上去
+*.db-wal
+*.db-shm
 
 # VSCode
 .vscode/
