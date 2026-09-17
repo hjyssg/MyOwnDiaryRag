@@ -105,3 +105,23 @@ class RandomDayResponse(BaseModel):
     total: int
     items: List[OnThisDayItem]
 
+
+class SummaryItem(BaseModel):
+    entry_key: Optional[str] = None
+    entry_id: Optional[int] = None
+    entry_date: Optional[str] = None
+    entry_type: Optional[str] = None
+    word_count: Optional[int] = None
+    status: str
+    summary: str = ""
+    model: Optional[str] = None
+    generated_at: Optional[str] = None
+
+
+class SummaryListResponse(BaseModel):
+    total: int
+    page: int
+    per_page: int
+    pages: int
+    items: List[SummaryItem]
+

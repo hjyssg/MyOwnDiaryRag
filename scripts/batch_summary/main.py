@@ -61,6 +61,14 @@ from scripts.batch_summary.llm import (  # noqa: E402
     list_models,
     pick_chat_model,
 )
+from summary_database import SummaryRepository, SummaryStore  # noqa: E402
+from summary_fingerprint import (  # noqa: E402
+    algorithm_fingerprint,
+    algorithm_payload,
+    cache_key as make_cache_key,
+    entry_key as make_entry_key,
+    source_hash,
+)
 
 logger = logging.getLogger("scripts.batch_summary")
 
@@ -94,6 +102,7 @@ def build_parser() -> argparse.ArgumentParser:
     mode.add_argument("--test", action="store_true", help="抽样试跑，只打印结果，不写状态与输出文件")
     mode.add_argument("--all", action="store_true", help="全量生成（可中断续跑）")
     mode.add_argument("--rebuild-md", action="store_true", help="不调用模型，仅用已有摘要重出 Markdown")
+    mode.add_argument("--reset-summaries", action="store_true", help="只清空摘要相关表，不修改原始日记")
 
     parser.add_argument("--samples", type=int, default=10, help="--test 抽样条数（默认 10）")
     parser.add_argument("--year", type=int, help="只处理某一年，如 --year 2015")
@@ -431,6 +440,30 @@ class PreviewWriter:
         return False
 
 
+class DatabaseSummaryView:
+    """SQLite 摘要的轻量内存视图，仅供现有进度与预览渲染接口使用。"""
+
+    def __init__(self, records=None):
+        self.results = {str(record.get("entry_id")): dict(record) for record in (records or [])}
+
+    def get(self, entry_id):
+        return self.results.get(str(entry_id))
+
+    def put(self, entry_id, record):
+        self.results[str(entry_id)] = record
+
+    def summary_count(self):
+        return sum(state_mod.has_summary(record) for record in self.results.values())
+
+    def summary_records(self):
+        records = [record for record in self.results.values() if state_mod.has_summary(record)]
+        return sorted(records, key=lambda r: (str(r.get("entry_date") or ""), int(r.get("entry_id") or 0)))
+
+    def stats(self):
+        return {name: sum(record.get("status") == name for record in self.results.values())
+                for name in ("ok", "empty", "failed")}
+
+
 # ---------------- 核心处理 ----------------
 
 def process_entries(
@@ -447,6 +480,9 @@ def process_entries(
     year_label: str = "",
     reporter: Optional["progress_mod.ProgressReporter"] = None,
     preview: Optional["PreviewWriter"] = None,
+    store: Optional[SummaryStore] = None,
+    algorithm_fingerprint_value: str = "",
+    run_id: Optional[int] = None,
 ) -> Dict:
     """逐篇调用模型写摘要并写入状态；已处理且内容未变的条目不再调用模型
 
@@ -474,6 +510,7 @@ def process_entries(
     else:
         emit = lambda text: print(text, flush=True)   # noqa: E731
     consecutive_failures = 0
+    completed = True
     started = time.monotonic()
 
     def snapshot(phase: str, index: int, current=None, entry_elapsed=None, note=None):
@@ -511,8 +548,14 @@ def process_entries(
     for index, entry in enumerate(entries, 1):
         entry_id = entry.get("id")
         content = entry.get("content") or ""
-        digest = state_mod.content_hash(content)
-        skip, reason = summary_state.should_skip(entry_id, digest, force=force)
+        digest = source_hash(content) if store else state_mod.content_hash(content)
+        stable_key = make_entry_key(entry)
+        current_cache_key = make_cache_key(stable_key, digest, algorithm_fingerprint_value) if store else ""
+        if store:
+            skip = not force and store.is_cache_hit(stable_key, current_cache_key)
+            reason = "done" if skip else "database-miss"
+        else:
+            skip, reason = summary_state.should_skip(entry_id, digest, force=force)
         if skip:
             stats["skipped"] += 1
             record = summary_state.get(entry_id) or {}
@@ -576,7 +619,21 @@ def process_entries(
             "processed_at": state_mod.now_iso(),
             "summary": summary_text,
         })
-        summary_state.save_if_needed()
+        if store:
+            store.upsert(
+                entry, entry_key=stable_key, source_hash_value=digest,
+                algorithm_fingerprint=algorithm_fingerprint_value,
+                cache_key=current_cache_key, status=status, summary=summary_text,
+                error=(error or "")[:500] or None,
+            )
+            if run_id is not None:
+                store.update_run(
+                    run_id, processed=index,
+                    generated=stats["ok"] + stats["empty"], reused=stats["skipped"],
+                    failed=stats["failed"],
+                )
+        else:
+            summary_state.save_if_needed()
 
         elapsed = time.monotonic() - started
         done = stats["ok"] + stats["empty"] + stats["failed"]
@@ -607,11 +664,14 @@ def process_entries(
             logger.error(
                 "连续失败 %d 次，停止本轮任务；进度已保存，可直接重跑续跑", consecutive_failures
             )
+            completed = False
             break
 
     stats["elapsed_seconds"] = round(time.monotonic() - started, 1)
     stats["calls"] = int(getattr(client, "call_count", 0))
-    summary_state.save(force=True)
+    stats["completed"] = completed
+    if not store:
+        summary_state.save(force=True)
     snapshot(
         "done", total,
         note=f"处理结束：有摘要 {stats['ok']} ｜ 空摘要 {stats['empty']} ｜ 失败 {stats['failed']} "
@@ -707,6 +767,40 @@ def build_summaries_payload(
         "summary_count": len(records),
         "entries": entries,
     }
+
+
+def build_database_payload(all_records, records, *, model, entry_types, years, stats=None):
+    """从 SQLite 当前记录构造导出 JSON。"""
+    keys = ("entry_key", "entry_id", "entry_date", "entry_type", "word_count",
+            "status", "summary", "model", "generated_at")
+    return {
+        "version": 3,
+        "generated_at": state_mod.now_iso(),
+        "model": model,
+        "entry_types": list(entry_types),
+        "years": list(years) if years else None,
+        "stats": stats or {},
+        "summary_count": len(records),
+        "entries": [{key: record.get(key) for key in keys} for record in all_records],
+    }
+
+
+def collect_database_pending(records, settings):
+    """从 SQLite 状态收集失败/空摘要并关联当前原文。"""
+    reader = dal.DiaryReader(settings["db_path"])
+    items = []
+    for record in records:
+        if record.get("status") not in ("empty", "failed"):
+            continue
+        entry = reader.entry(record.get("entry_id")) or {}
+        items.append({
+            **{key: record.get(key) for key in
+               ("entry_id", "entry_date", "entry_type", "word_count", "status")},
+            "error": None,
+            "file_source": entry.get("file_source"),
+            "content": entry.get("content") or "",
+        })
+    return items
 
 
 def write_outputs(paths: Dict[str, Path], payload: Dict, records: List[Dict]) -> Dict[str, Path]:
@@ -879,6 +973,21 @@ def cmd_all(args, settings, paths: Dict[str, Path]) -> int:
             print(f"[错误] {exc}")
             return EXIT_NO_MODEL
 
+        fingerprint_settings = dict(settings)
+        fingerprint_settings.update({
+            "llm_temperature": client.temperature,
+            "llm_max_tokens": client.max_tokens,
+            "llm_json_mode": client.json_mode,
+            "llm_reasoning_effort": client.reasoning_effort,
+        })
+        algorithm = algorithm_payload(fingerprint_settings, model, template)
+        algorithm_fp = algorithm_fingerprint(algorithm)
+        store = SummaryStore(settings["db_path"])
+        store.migrate()
+        store.register_algorithm(algorithm_fp, algorithm)
+        scope = {"years": years, "entry_types": entry_types, "limit": args.limit}
+        run_id = store.start_run(algorithm_fp, scope, len(entries))
+
         logger.info(
             "开始批量总结 | 模型=%s | 地址=%s | 思考=%s | Prompt指纹=%s | 类型=%s | 年份=%s | 条数=%d",
             model, client.base_url, client.reasoning_effort or "模型默认",
@@ -888,13 +997,10 @@ def cmd_all(args, settings, paths: Dict[str, Path]) -> int:
         days_total = len({str(e.get("date") or "") for e in entries if e.get("date")})
         reporter.set_total(len(entries), days_total=days_total)
 
-        summary_state = state_mod.SummaryState(
-            path=paths["state"],
-            prompt_sha1=prompt_sha1_value,
-            model=model,
-            entry_types=entry_types,
-        ).load()
-        previous = summary_state.stats()
+        previous_records = SummaryRepository(settings["db_path"]).all_records()
+        summary_state = DatabaseSummaryView(previous_records)
+        previous = {name: sum(r.get("status") == name for r in previous_records)
+                    for name in ("ok", "empty", "failed")}
         print(
             f"待处理 {len(entries)} 篇（覆盖 {days_total} 天）| 已有状态: 有摘要 {previous.get('ok', 0)} / "
             f"空摘要 {previous.get('empty', 0)} / 失败 {previous.get('failed', 0)}"
@@ -923,9 +1029,10 @@ def cmd_all(args, settings, paths: Dict[str, Path]) -> int:
                 force=args.force, quiet=args.quiet,
                 year_label=",".join(str(y) for y in years) if years else "全部",
                 reporter=reporter, preview=preview,
+                store=store, algorithm_fingerprint_value=algorithm_fp, run_id=run_id,
             )
         except KeyboardInterrupt:
-            summary_state.save(force=True)
+            store.update_run(run_id, status="interrupted")
             reporter.stop()
             preview.finish(summary_state, phase="interrupted")
             print("\n\n[中断] 进度已保存：重跑同一命令即可续跑，也可先用 --rebuild-md 查看已有结果。")
@@ -934,20 +1041,28 @@ def cmd_all(args, settings, paths: Dict[str, Path]) -> int:
             return EXIT_OK
 
         reporter.set_phase("merging", "汇总生成目录，不调用模型")
-        records = collect_summaries(summary_state)
+        if stats["completed"] and not args.limit:
+            store.delete_orphans(
+                [make_entry_key(entry) for entry in entries],
+                years=years, entry_types=entry_types,
+            )
+        repository = SummaryRepository(settings["db_path"])
+        database_records = repository.all_records()
+        records = [record for record in database_records if record.get("status") == "ok"]
 
         reporter.set_phase("saving", "写 Markdown / JSON / 待复核清单")
-        payload = build_summaries_payload(
-            summary_state, records,
-            model=model, prompt_sha1_value=prompt_sha1_value,
-            entry_types=entry_types, years=years, stats=stats,
-        )
+        payload = build_database_payload(database_records, records, model=model,
+                                         entry_types=entry_types, years=years, stats=stats)
         write_outputs(paths, payload, records)
-        pending = collect_pending(summary_state, settings)
+        pending = collect_database_pending(database_records, settings)
         write_pending_outputs(paths, pending)
 
         print_summary(records, summary_state, stats)
         preview.finish(summary_state, processed=len(entries), total=len(entries), phase="done")
+        final_run_status = "completed" if stats["completed"] else "failed"
+        store.update_run(run_id, status=final_run_status, processed=len(entries),
+                         generated=stats["ok"] + stats["empty"], reused=stats["skipped"],
+                         failed=stats["failed"])
         reporter.set_phase("done")
         print(f"本次运行目录: {paths['dir']}")
         print(f"已生成: {paths['markdown']}")
@@ -955,7 +1070,7 @@ def cmd_all(args, settings, paths: Dict[str, Path]) -> int:
             print(f"中途预览（含运行期快照）: {paths['preview']}")
         print(f"待复核(未产出摘要) {len(pending)} 篇 → {paths['pending_md']}")
         print(f"状态快照: {paths['status']} | 进度: {paths['progress']}")
-        print(f"断点状态(跨运行共享): {paths['state']} | 日志: {paths['log']}")
+        print(f"摘要主存储: {settings['db_path']} | 日志: {paths['log']}")
         return EXIT_OK
     finally:
         reporter.stop()
@@ -978,40 +1093,40 @@ def cmd_rebuild(args, settings, paths: Dict[str, Path]) -> int:
     reporter.start()
     print(f"本次运行目录: {paths['dir']}")
     try:
-        summary_state = state_mod.SummaryState(path=paths["state"]).load()
-        if not summary_state.results:
-            print(f"[错误] 未找到处理结果：{paths['state']}")
+        repository = SummaryRepository(settings["db_path"])
+        database_records = repository.all_records()
+        if not database_records:
+            print(f"[错误] 数据库中未找到摘要：{settings['db_path']}")
             print("请先运行：python scripts/batch_summary/main.py --all")
             return EXIT_ERROR
 
-        reporter.set_total(len(summary_state.results))
-        state_stats = summary_state.stats()
+        reporter.set_total(len(database_records))
+        state_stats = {name: sum(r.get("status") == name for r in database_records)
+                       for name in ("ok", "empty", "failed")}
         reporter.update(
-            len(summary_state.results),
+            len(database_records),
             stats={
                 "ok": state_stats.get("ok", 0),
                 "empty": state_stats.get("empty", 0),
                 "failed": state_stats.get("failed", 0),
                 "skipped": 0,
-                "summaries": len(summary_state.summary_records()),
+                "summaries": state_stats["ok"],
             },
-            note=f"读入已有结果 {len(summary_state.results)} 篇（不调用模型）",
+            note=f"从 SQLite 读入 {len(database_records)} 篇（不调用模型）",
         )
         reporter.set_phase("merging", "汇总生成目录，不调用模型")
-        records = collect_summaries(summary_state)
+        records = [record for record in database_records if record.get("status") == "ok"]
 
         reporter.set_phase("saving", "写 Markdown / JSON / 待复核清单")
-        payload = build_summaries_payload(
-            summary_state, records,
-            model=summary_state.model, prompt_sha1_value=summary_state.prompt_sha1,
-            entry_types=summary_state.entry_types, years=years,
-            stats={"source": "rebuild-md"},
+        payload = build_database_payload(
+            database_records, records, model="", entry_types=resolve_entry_types(args),
+            years=years, stats={"source": "rebuild-md"},
         )
         write_outputs(paths, payload, records)
-        pending = collect_pending(summary_state, settings)
+        pending = collect_database_pending(database_records, settings)
         write_pending_outputs(paths, pending)
 
-        print_summary(records, summary_state)
+        print_summary(records, None)
         reporter.set_phase("done")
         print(f"已重新生成: {paths['markdown']}（本次未调用模型）")
         print(f"待复核(未产出摘要) {len(pending)} 篇 → {paths['pending_md']}")
@@ -1028,13 +1143,13 @@ def main(argv=None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
 
-    if not (args.models or args.test or args.all or args.rebuild_md):
+    if not (args.models or args.test or args.all or args.rebuild_md or args.reset_summaries):
         parser.print_help()
-        print("\n请选择一个动作：--models / --test / --all / --rebuild-md")
+        print("\n请选择一个动作：--models / --test / --all / --rebuild-md / --reset-summaries")
         return EXIT_ERROR
 
     # --models / --test 不写产物，就不建时间戳子目录（--test 结束时也不会留下空目录）
-    paths = resolve_paths(args, timestamped=not (args.models or args.test))
+    paths = resolve_paths(args, timestamped=not (args.models or args.test or args.reset_summaries))
     try:
         settings = bs_config.get_settings()
     except RuntimeError as exc:
@@ -1043,6 +1158,10 @@ def main(argv=None) -> int:
 
     if args.models:
         return cmd_models(args, settings)
+    if args.reset_summaries:
+        SummaryStore(settings["db_path"]).reset()
+        print("已清空摘要相关表；原始日记、FTS 和统计表未修改。")
+        return EXIT_OK
     if args.test:
         return cmd_test(args, settings, paths)
     if args.all:

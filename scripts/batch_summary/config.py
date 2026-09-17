@@ -152,6 +152,9 @@ def get_settings():
             env, "LLM_REASONING_EFFORT", DEFAULT_LLM_REASONING_EFFORT
         ).lower(),
         "allow_remote_llm": _env_bool(env, "ALLOW_REMOTE_LLM", False),
+        "content_head_chars": CONTENT_HEAD_CHARS,
+        "content_tail_chars": CONTENT_TAIL_CHARS,
+        "max_summary_chars": MAX_SUMMARY_CHARS,
         # 心跳间隔：SUMMARY_HEARTBEAT_SECONDS 优先，其次兼容旧的 REVIEW_HEARTBEAT_SECONDS
         "heartbeat_seconds": _env_int(
             env, "SUMMARY_HEARTBEAT_SECONDS",

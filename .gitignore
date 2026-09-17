@@ -20,6 +20,8 @@ ENV/
 build/
 develop-eggs/
 dist/
+!frontend/dist/
+!frontend/dist/**
 downloads/
 eggs/
 .eggs/
@@ -32,6 +34,13 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+
+# Node（生产包 frontend/dist 需要提交，供 FastAPI 直接托管）
+node_modules/
+frontend/.vite/
+*.tsbuildinfo
+frontend/vite.config.js
+frontend/vite.config.d.ts
 
 # IDE
 .vscode/

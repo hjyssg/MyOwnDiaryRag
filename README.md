@@ -11,14 +11,14 @@
 |------|----------|----------|
 | **核心**（项目根目录） | 日记导入、SQLite FTS5 全文检索、年度字数统计、数据库结构 | 本文件 |
 | **日记批量总结** | 用本地 LM Studio 模型为**每一篇**日记写摘要，生成按年份排列的《日记总结.md》 | [`scripts/batch_summary/README.md`](scripts/batch_summary/README.md) |
-| **Web 浏览系统** | FastAPI + Jinja2 的本地只读网页：浏览 / 搜索 / 过去的今天 / 随机一天 / REST API | [`webapp/README.md`](webapp/README.md) |
+| **Web 浏览系统** | React + TypeScript 前端与 FastAPI 只读 API：浏览 / 搜索 / 摘要 / 回顾 | [`webapp/README.md`](webapp/README.md) |
 
 ## 功能特性
 
 - 📝 **日记导入**：智能识别多种日记格式（单日 / 整月合集 / 多日合一），自动分类和解析
 - 🔍 **全文搜索**：基于 SQLite FTS5 的高效全文检索
 - 🧠 **日记批量总结**：用本地 LLM 为**每一篇**日记写一段摘要（不做重要性筛选），按年份整理成目录 → [详细说明](scripts/batch_summary/README.md)
-- 🌐 **网页浏览**：本地只读 Web 界面，支持浏览、搜索、「过去的今天」与随机回看 → [详细说明](webapp/README.md)
+- 🌐 **网页浏览**：React 本地只读界面，支持浏览、搜索、摘要、「过去的今天」与随机回看 → [详细说明](webapp/README.md)
 - 📊 **统计分析**：年度写作统计和趋势分析
 
 ## 系统要求
@@ -100,7 +100,7 @@ python scripts/yearly_stats.py
 ### 3. 日记批量总结（本地 LLM 逐篇写摘要）
 
 用本地 LM Studio 模型逐篇阅读数据库中的日记，为**每一篇**写一段摘要（不做"重要/不重要"的筛选），
-生成按年份排列的 `日记总结.md`。全程本地运行，数据库以只读方式访问。
+生成按年份排列的 `日记总结.md`，并将摘要逐篇提交到同一个 SQLite 数据库供 Web 查询。
 
 ```bash
 python scripts/batch_summary/main.py --models             # 1) 确认本地模型名（写入 .env）
@@ -117,9 +117,9 @@ python scripts/batch_summary/main.py --all                # 3) 全量生成（�
 在浏览器里回看日记：浏览 / 全文搜索 /「过去的今天」/ 随机一天。
 
 ```bash
-cd webapp
-pip install -r requirements.txt   # 首次运行需安装依赖
-python app.py                     # 或双击 run.bat
+pip install -r webapp/requirements.txt
+cd frontend && npm ci && npm run build && cd ..
+python webapp/app.py
 ```
 
 打开 <http://127.0.0.1:8000> 即可。页面入口、REST API 与维护说明见
@@ -131,7 +131,8 @@ python app.py                     # 或双击 run.bat
 python -m unittest discover -s tests -p "test_*.py"
 ```
 
-（测试目前覆盖日记批量总结模块，说明见 [`scripts/batch_summary/README.md`](scripts/batch_summary/README.md)）
+测试覆盖日记批量总结模块和 FastAPI 契约。API 测试依赖可通过
+`pip install -r webapp/requirements-dev.txt` 安装。
 
 ## 项目结构
 
@@ -178,8 +179,8 @@ MyOwnDiaryRag/
 
 - **数据库**：SQLite + FTS5 全文搜索（统一由根目录 `database.py` 的只读 `Database` 类访问）
 - **AI 模型**：LM Studio 本地模型（仅用于日记批量总结，非本机地址会被拒绝）
-- **Web 层**：FastAPI + Jinja2 服务端渲染 + 少量原生 JS（只读，默认绑定 `127.0.0.1`）
-- **依赖**：仅标准库 + Web 层的 `fastapi / uvicorn / jinja2`，无其他第三方依赖
+- **Web 层**：React + TypeScript + Vite SPA；FastAPI 提供只读 JSON API 与生产静态包
+- **摘要存储**：与原始日记同一个 SQLite，使用稳定业务键和正文/算法 SHA-256 指纹
 
 ## 关于为何移除 RAG 问答
 

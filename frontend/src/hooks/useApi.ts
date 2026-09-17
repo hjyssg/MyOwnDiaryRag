@@ -1,0 +1,3 @@
+/* eslint-disable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps */
+import {useEffect,useState} from 'react'
+export function useApi<T>(loader:(signal:AbortSignal)=>Promise<T>,deps:unknown[]){const [data,setData]=useState<T>();const [error,setError]=useState('');const [loading,setLoading]=useState(true);useEffect(()=>{const controller=new AbortController();setLoading(true);setError('');loader(controller.signal).then(setData).catch((e:unknown)=>{if(e instanceof DOMException&&e.name==='AbortError')return;setError(e instanceof Error?e.message:'请求失败')}).finally(()=>{if(!controller.signal.aborted)setLoading(false)});return()=>controller.abort()},deps);return{data,error,loading}}
