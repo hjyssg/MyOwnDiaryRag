@@ -1,2 +1,37 @@
-import {useState} from 'react';import {Link} from 'react-router-dom';import {getRandom} from '../api/entries';import {ErrorState,LoadingState} from '../components/States';import {useApi} from '../hooks/useApi';import {useDocumentTitle} from '../hooks/useDocumentTitle'
-export function RandomPage(){useDocumentTitle('随机一天');const[nonce,setNonce]=useState(0);const{data,error,loading}=useApi(getRandom,[nonce]);return <><h1>随机一天</h1><button onClick={()=>setNonce(n=>n+1)}>再随机一天</button>{loading?<LoadingState/>:error?<ErrorState message={error}/>:data&&<><h2>{data.date}</h2>{data.items.map(e=><article className="card" key={e.id}><Link to={`/entries/${e.id}`}>{e.entry_type} · {e.word_count} 字</Link><p>{e.preview}</p></article>)}</>}</>}
+import { useState } from 'react'
+import { Link } from 'react-router-dom'
+import { getRandom } from '../api/entries'
+import { ErrorState, LoadingState } from '../components/States'
+import { useApi } from '../hooks/useApi'
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
+
+export function RandomPage() {
+  useDocumentTitle('随机一天')
+  const [nonce, setNonce] = useState(0)
+  const { data, error, loading } = useApi(getRandom, [nonce])
+  return (
+    <>
+      <h1>随机一天</h1>
+      <button onClick={() => setNonce((n) => n + 1)}>再随机一天</button>
+      {loading ? (
+        <LoadingState />
+      ) : error ? (
+        <ErrorState message={error} />
+      ) : (
+        data && (
+          <>
+            <h2>{data.date}</h2>
+            {data.items.map((e) => (
+              <article className="card" key={e.id}>
+                <Link to={`/entries/${e.id}`}>
+                  {e.entry_type} · {e.word_count} 字
+                </Link>
+                <p>{e.preview}</p>
+              </article>
+            ))}
+          </>
+        )
+      )}
+    </>
+  )
+}

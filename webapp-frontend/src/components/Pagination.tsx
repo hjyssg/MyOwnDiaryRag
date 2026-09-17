@@ -1,1 +1,20 @@
-import {Link,useLocation} from 'react-router-dom';export function Pagination({page,pages}:{page:number;pages:number}){const location=useLocation();const href=(p:number)=>{const q=new URLSearchParams(location.search);q.set('page',String(p));return `${location.pathname}?${q}`};if(pages<=1)return null;return <nav className="pagination" aria-label="分页">{page>1&&<Link to={href(page-1)}>上一页</Link>}<span>{page} / {pages}</span>{page<pages&&<Link to={href(page+1)}>下一页</Link>}</nav>}
+import { Link, useLocation } from 'react-router-dom'
+
+export function Pagination({ page, pages }: { page: number; pages: number }) {
+  const location = useLocation()
+  const href = (p: number) => {
+    const q = new URLSearchParams(location.search)
+    q.set('page', String(p))
+    return `${location.pathname}?${q}`
+  }
+  if (pages <= 1) return null
+  return (
+    <nav className="pagination" aria-label="分页">
+      {page > 1 && <Link to={href(page - 1)}>上一页</Link>}
+      <span>
+        {page} / {pages}
+      </span>
+      {page < pages && <Link to={href(page + 1)}>下一页</Link>}
+    </nav>
+  )
+}

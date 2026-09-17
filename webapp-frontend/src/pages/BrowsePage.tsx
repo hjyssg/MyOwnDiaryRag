@@ -1,2 +1,59 @@
-import {Form,useSearchParams} from 'react-router-dom';import {getEntries} from '../api/entries';import {EntryCard} from '../components/EntryCard';import {Pagination} from '../components/Pagination';import {EmptyState,ErrorState,LoadingState} from '../components/States';import {useApi} from '../hooks/useApi';import {useDocumentTitle} from '../hooks/useDocumentTitle'
-export function BrowsePage(){useDocumentTitle('浏览日记');const[p]=useSearchParams();const key=p.toString();const params=Object.fromEntries(p);const{data,error,loading}=useApi(s=>getEntries(params,s),[key]);return <><h1>浏览日记</h1><Form className="filters"><input name="year" defaultValue={p.get('year')??''} inputMode="numeric" placeholder="年份"/><select name="month" defaultValue={p.get('month')??''}><option value="">全部月份</option>{Array.from({length:12},(_,i)=><option key={i+1}>{i+1}</option>)}</select><select name="entry_type" defaultValue={p.get('entry_type')??''}><option value="">全部类型</option>{['single_day','multi_day','stock_diary','retrospective','summary','note'].map(t=><option key={t}>{t}</option>)}</select><input name="q" defaultValue={p.get('q')??''} placeholder="搜索正文"/><button>筛选</button></Form>{loading?<LoadingState/>:error?<ErrorState message={error}/>:!data?.items.length?<EmptyState/>:<><p className="meta">共 {data.total} 篇</p>{data.items.map(e=><EntryCard key={e.id} entry={e}/>)}<Pagination page={data.page} pages={data.pages}/></>}</>}
+import { Form, useSearchParams } from 'react-router-dom'
+import { getEntries } from '../api/entries'
+import { EntryCard } from '../components/EntryCard'
+import { Pagination } from '../components/Pagination'
+import { EmptyState, ErrorState, LoadingState } from '../components/States'
+import { useApi } from '../hooks/useApi'
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
+
+export function BrowsePage() {
+  useDocumentTitle('浏览日记')
+  const [p] = useSearchParams()
+  const key = p.toString()
+  const params = Object.fromEntries(p)
+  const { data, error, loading } = useApi((s) => getEntries(params, s), [key])
+  return (
+    <>
+      <h1>浏览日记</h1>
+      <Form className="filters">
+        <input
+          name="year"
+          defaultValue={p.get('year') ?? ''}
+          inputMode="numeric"
+          placeholder="年份"
+        />
+        <select name="month" defaultValue={p.get('month') ?? ''}>
+          <option value="">全部月份</option>
+          {Array.from({ length: 12 }, (_, i) => (
+            <option key={i + 1}>{i + 1}</option>
+          ))}
+        </select>
+        <select name="entry_type" defaultValue={p.get('entry_type') ?? ''}>
+          <option value="">全部类型</option>
+          {['single_day', 'multi_day', 'stock_diary', 'retrospective', 'summary', 'note'].map(
+            (t) => (
+              <option key={t}>{t}</option>
+            ),
+          )}
+        </select>
+        <input name="q" defaultValue={p.get('q') ?? ''} placeholder="搜索正文" />
+        <button>筛选</button>
+      </Form>
+      {loading ? (
+        <LoadingState />
+      ) : error ? (
+        <ErrorState message={error} />
+      ) : !data?.items.length ? (
+        <EmptyState />
+      ) : (
+        <>
+          <p className="meta">共 {data.total} 篇</p>
+          {data.items.map((e) => (
+            <EntryCard key={e.id} entry={e} />
+          ))}
+          <Pagination page={data.page} pages={data.pages} />
+        </>
+      )}
+    </>
+  )
+}

@@ -1,3 +1,47 @@
-import {useParams} from 'react-router-dom';import {getEntry} from '../api/entries';import {getEntrySummary} from '../api/summaries';import {ErrorState,LoadingState} from '../components/States';import {useApi} from '../hooks/useApi';import {useDocumentTitle} from '../hooks/useDocumentTitle'
-const labels:Record<string,string>={missing:'暂无摘要',stale:'原文或算法已变化，摘要待更新',empty:'本次未生成有效摘要',failed:'生成失败，将在下次运行时重试'}
-export function EntryPage(){const{id=''}=useParams();useDocumentTitle('阅读日记');const entry=useApi(s=>getEntry(id,s),[id]);const summary=useApi(s=>getEntrySummary(id,s),[id]);if(entry.loading)return <LoadingState/>;if(entry.error||!entry.data)return <ErrorState message={entry.error||'日记不存在'}/>;return <article><h1>{entry.data.date}</h1><p className="meta">{entry.data.entry_type} · {entry.data.word_count} 字</p><section className="summary-card"><h2>摘要</h2>{summary.loading?<LoadingState/>:summary.error?<ErrorState message={summary.error}/>:summary.data?.status==='ok'?<><p>{summary.data.summary}</p><small>{summary.data.model} · {summary.data.generated_at}</small></>:<p>{labels[summary.data?.status??'missing']}</p>}</section><div className="content">{entry.data.content}</div></article>}
+import { useParams } from 'react-router-dom'
+import { getEntry } from '../api/entries'
+import { getEntrySummary } from '../api/summaries'
+import { ErrorState, LoadingState } from '../components/States'
+import { useApi } from '../hooks/useApi'
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
+
+const labels: Record<string, string> = {
+  missing: '暂无摘要',
+  stale: '原文或算法已变化，摘要待更新',
+  empty: '本次未生成有效摘要',
+  failed: '生成失败，将在下次运行时重试',
+}
+export function EntryPage() {
+  const { id = '' } = useParams()
+  useDocumentTitle('阅读日记')
+  const entry = useApi((s) => getEntry(id, s), [id])
+  const summary = useApi((s) => getEntrySummary(id, s), [id])
+  if (entry.loading) return <LoadingState />
+  if (entry.error || !entry.data) return <ErrorState message={entry.error || '日记不存在'} />
+  return (
+    <article>
+      <h1>{entry.data.date}</h1>
+      <p className="meta">
+        {entry.data.entry_type} · {entry.data.word_count} 字
+      </p>
+      <section className="summary-card">
+        <h2>摘要</h2>
+        {summary.loading ? (
+          <LoadingState />
+        ) : summary.error ? (
+          <ErrorState message={summary.error} />
+        ) : summary.data?.status === 'ok' ? (
+          <>
+            <p>{summary.data.summary}</p>
+            <small>
+              {summary.data.model} · {summary.data.generated_at}
+            </small>
+          </>
+        ) : (
+          <p>{labels[summary.data?.status ?? 'missing']}</p>
+        )}
+      </section>
+      <div className="content">{entry.data.content}</div>
+    </article>
+  )
+}

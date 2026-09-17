@@ -1,2 +1,18 @@
-import {Link} from 'react-router-dom';import type {EntryPreview,OnThisDayItem} from '../api/types'
-export function EntryCard({entry}:{entry:EntryPreview|OnThisDayItem}){return <article className="card"><div><Link to={`/entries/${entry.id}`} className="card-title">{entry.date}</Link><span className="meta">{entry.entry_type} · {entry.word_count} 字</span></div><p>{entry.preview}</p></article>}
+import { Link } from 'react-router-dom'
+import type { EntryPreview, OnThisDayItem } from '../api/types'
+
+export function EntryCard({ entry }: { entry: EntryPreview | OnThisDayItem }) {
+  return (
+    <article className="card">
+      <div>
+        <Link to={`/entries/${entry.id}`} className="card-title">
+          {entry.date}
+        </Link>
+        <span className="meta">
+          {entry.entry_type} · {entry.word_count} 字
+        </span>
+      </div>
+      <p>{entry.preview}</p>
+    </article>
+  )
+}

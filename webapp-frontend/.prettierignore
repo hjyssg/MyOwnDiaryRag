@@ -1,0 +1,7 @@
+# 依赖与构建产物（不要格式化）
+node_modules
+dist
+
+# 锁文件与 TS 增量编译缓存
+package-lock.json
+*.tsbuildinfo
