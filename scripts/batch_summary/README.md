@@ -46,7 +46,7 @@ output/YYMMDDHHMMSS/
 每篇日记在摘要之后**再发一次很短的请求**，模型只回一个标签词（例如 `快乐`），Python 负责归一化：
 
 - 标签集来自根 `.env` 的 `EMOTION_LABELS`（逗号分隔、保序、去重；**最后一项是兜底标签**），
-  默认 `快乐,平淡,悲伤,生气,焦虑,疲惫,期待,其他`；batch 与 Web 共用同一份定义；
+  batch 与 Web 共用同一份定义；
 - 归一顺序：精确标签 → 别名（`开心`→`快乐`）→ 输出里包含标签 → 输出里包含别名 → 兜底标签；
   兜底时记一条 warning，日志里能看到模型的原始输出，便于调整 Prompt；
 - 情绪 Prompt 在 `prompts/diary_emotion_prompt.txt`（占位符 `{DATE}` / `{ENTRY_TYPE}` / `{CONTENT}` / `{LABELS}`）；

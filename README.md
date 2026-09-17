@@ -99,34 +99,14 @@ python scripts/yearly_stats.py
 
 ### 3. 日记批量总结（本地 LLM 逐篇写摘要）
 
-用本地 LM Studio 模型逐篇阅读数据库中的日记，为**每一篇**写一段摘要（不做"重要/不重要"的筛选），
-再额外判断一次**情绪标签**（默认 8 类：快乐/平淡/悲伤/生气/焦虑/疲惫/期待/其他），
-生成按年份排列的 `中途预览.md`（运行期=实时快照，跑完=最终版），每行形如 `- 0120【快乐】今天去公园散步……`，
-并将摘要与情绪逐篇提交到同一个 SQLite 数据库供 Web 查询与筛选。
+用本地 LM Studio 模型逐篇阅读数据库中的日记，为**每一篇**写一段摘要
 
-```bash
-python scripts/batch_summary/main.py --models             # 1) 确认本地模型名（写入 .env）
-python scripts/batch_summary/main.py --test --samples 10  # 2) 抽样试跑（同时打印情绪判断结果）
-python scripts/batch_summary/main.py --all                # 3) 全量生成（可 Ctrl+C，重跑续跑）
-python scripts/batch_summary/main.py --emotion-only       # 4) 只给老库补情绪（摘要一条都不重跑）
-```
-
-命令行参数、实时进度与中途预览、产物位置、断点续跑、Prompt 与摘要长度调整，
-以及 `--year` / `--include-stock` / `--force` 等全部选项，见
+详细见
 **[`scripts/batch_summary/README.md`](scripts/batch_summary/README.md)**。
 
 ### 4. 网页浏览（本地只读）
 
 在浏览器里回看日记：浏览 / 全文搜索 /「过去的今天」/ 随机一天。
-
-```bash
-pip install -r webapp/requirements.txt
-cd frontend && npm ci && npm run build && cd ..
-python webapp/app.py
-```
-
-打开 <http://127.0.0.1:8000> 即可。页面入口、REST API 与维护说明见
-**[`webapp/README.md`](webapp/README.md)**。
 
 ### 5. 运行单元测试
 
@@ -155,29 +135,6 @@ MyOwnDiaryRag/
 └── diary_database.db          # SQLite 数据库（被 .gitignore 忽略，需自行生成）
 ```
 
-## 数据库结构
-
-### 主表：diary_entries
-
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| id | INTEGER | 主键 |
-| date | DATE | 日记日期 |
-| year/month/day | INTEGER | 年/月/日 |
-| content | TEXT | 日记内容 |
-| file_source | TEXT | 源文件路径 |
-| entry_type | TEXT | 条目类型 |
-| word_count | INTEGER | 字数 |
-
-### 条目类型
-
-- `single_day`：单日单篇
-- `multi_day`：多日合一
-- `stock_diary`：股票日记
-- `retrospective`：早期回忆
-- `summary`：总结类
-- `note`：笔记类
-
 ## 技术架构
 
 - **数据库**：SQLite + FTS5 全文搜索（统一由根目录 `database.py` 的只读 `Database` 类访问）
@@ -185,19 +142,6 @@ MyOwnDiaryRag/
 - **Web 层**：React + TypeScript + Vite SPA；FastAPI 提供只读 JSON API 与生产静态包
 - **摘要存储**：与原始日记同一个 SQLite，使用稳定业务键和正文/算法 SHA-256 指纹
 - **情绪标签**：摘要之外的第二条派生数据，拥有**独立**的算法指纹与缓存键（补情绪不会让摘要失效）
-
-## 关于为何移除 RAG 问答
-
-该类自然语言问答在个人日记场景里很难保证“稳定正确”，核心原因是：
-
-- 统计口径常常不唯一（例如“去了几次”到底按天数、场次、提及次数还是实际出行）
-- 文本里存在计划、回忆、引用、吐槽等噪声，关键词命中不等于事实发生
-- 缺少明确标注数据时，模型与规则都只能做近似推断，无法给出可验证的确定答案
-
-因此当前版本定位为：**导入 + 检索 + 日记批量总结 + 统计 + 本地网页回看**，不再提供 RAG 问答入口。
-
-> 备注：随着未来 LLM 模型能力、长上下文与工具调用稳定性继续提升，
-> 在口径先定义清楚的前提下，问答效果有机会明显改善；后续可再评估是否重启该能力。
 
 ## 注意事项
 
@@ -214,6 +158,4 @@ MyOwnDiaryRag/
 
 MIT License
 
-## 贡献
 
-欢迎提交 Issue 和 Pull Request！
