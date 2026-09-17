@@ -7,7 +7,6 @@ from pathlib import Path
 from scripts.batch_summary import config as bs_config
 from scripts.batch_summary import main as batch
 from scripts.batch_summary import render
-from scripts.batch_summary.state import SummaryState
 from summary_database import SummaryRepository, SummaryStore
 from summary_fingerprint import algorithm_fingerprint, algorithm_payload, emotion_payload
 
@@ -36,7 +35,7 @@ class DatabasePipelineTests(unittest.TestCase):
     def fp(self,prompt="p"):
         payload=algorithm_payload(self.settings,"model",prompt);value=algorithm_fingerprint(payload);self.store.register_algorithm(value,payload);return value
     def execute_pipeline(self,client,entry=None,fp=None,force=False):
-        state=SummaryState(path=Path(self.tmp.name)/"unused.json")
+        state=batch.SummaryView()
         return batch.process_entries([entry or self.entry],client,state,"{CONTENT}","legacy",quiet=True,progress=lambda _:None,store=self.store,algorithm_fingerprint_value=fp or self.fp(),force=force)
 
     def test_same_input_reuses_without_model_call(self):
@@ -51,6 +50,17 @@ class DatabasePipelineTests(unittest.TestCase):
     def test_failed_retries_and_force_bypasses_cache(self):
         fp=self.fp();self.execute_pipeline(Client(fail=True),fp=fp);retry=Client();self.execute_pipeline(retry,fp=fp);self.assertEqual(retry.call_count,1)
         forced=Client();self.execute_pipeline(forced,fp=fp,force=True);self.assertEqual(forced.call_count,1)
+
+    def test_blank_model_answer_is_marked_empty(self):
+        """模型回"无"不能被当成摘要（旧版正是这里产生了假事件）"""
+        class BlankClient(Client):
+            def chat(self, _prompt, **_overrides):
+                self.call_count += 1
+                return "无"
+
+        self.execute_pipeline(BlankClient(), fp=self.fp())
+        records = SummaryRepository(self.path).all_records()
+        self.assertEqual((records[0]["status"], records[0]["summary"]), ("empty", ""))
 
     def test_changed_entry_id_reuses_and_join_returns_new_id(self):
         fp=self.fp();self.execute_pipeline(Client(),fp=fp)
@@ -147,7 +157,7 @@ class EmotionPipelineTests(unittest.TestCase):
 
     def execute(self, client, *, classifier=None, entries=None, **kwargs):
         summary_fp, _ = self.fingerprints()
-        state = SummaryState(path=Path(self.tmp.name) / "unused.json")
+        state = batch.SummaryView()
         return batch.process_entries(
             entries or self.entries, client, state, "{CONTENT}", "legacy", quiet=True,
             progress=lambda _: None, store=self.store, algorithm_fingerprint_value=summary_fp,
@@ -259,7 +269,7 @@ class EmotionPipelineTests(unittest.TestCase):
         self.assertIn("- 0917【生气】整理工作并和朋友吃饭。", render.render_sections(records))
         self.assertIn("- 0917【生气】整理工作并和朋友吃饭。", render.render_markdown(records))
 
-        view = batch.DatabaseSummaryView(records)
+        view = batch.SummaryView(records)
         self.assertEqual(view.emotion_count(), 2)
         self.assertEqual(batch.body_signature(view), (2, 2))
         # 情绪被清掉后指纹变化：--emotion-only 补情绪时中途预览才会重排

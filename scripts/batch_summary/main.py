@@ -3,7 +3,7 @@
 """日记批量总结 - 入口脚本
 
 用本地 LM Studio 模型逐篇阅读 SQLite 中的日记，为**每一篇**写一段摘要，
-生成按年份排列的 Markdown 目录。全程本地运行，数据库只读，原始日记不修改。
+生成一份「中途预览.md」。全程本地运行，数据库只读，原始日记不修改。
 
 本功能刻意不让本地模型做判断：模型只负责"把这篇日记写成一段摘要"，
 既不筛"重要/不重要"，也不负责日期或标题——因此每一篇都会产出摘要。
@@ -11,22 +11,19 @@
 常用命令：
 
     python scripts/batch_summary/main.py --models             # 确认 LM Studio 实际模型名
-    python scripts/batch_summary/main.py --test --samples 10  # 抽样试跑（不写状态/输出文件）
+    python scripts/batch_summary/main.py --test --samples 10  # 抽样试跑（不写任何文件）
     python scripts/batch_summary/main.py --all                # 全量（可 Ctrl+C，重跑自动续跑）
     python scripts/batch_summary/main.py --years 2015-2019    # 分年跑
-    python scripts/batch_summary/main.py --rebuild-md         # 不调模型，用已有摘要重出 Markdown
+    python scripts/batch_summary/main.py --rebuild-md         # 不调模型，用已有摘要重写预览
 
-产物（每次运行放在 scripts/batch_summary/output/YYMMDDHHMMSS/ 子目录里，历史互不覆盖）：
+产物：**只有一个文件** —— 本次运行目录里的 中途预览.md
 
-    日记总结.md           最终目录：每篇日记一行「日期 +【情绪】+ 摘要」（整轮跑完才写）
-    中途预览.md           运行期间的"截至当前"目录（默认每 60 秒刷新，随时可打开）
-    summaries.json        结构化中间结果（每篇一条摘要记录）
-    progress.json         实时进度快照（status.py 读它）
-    运行状态.txt          最新状态块（双击即可查看，不需要任何命令）
-    待复核_未产出摘要.*   调用失败或模型给出空答案的日记原文清单
-    batch_summary.log     处理日志
+    output/YYMMDDHHMMSS/中途预览.md
+        运行期间：每 N 秒刷新一次的"截至当前"目录（随时可打开）
+        跑完/中断：同一个文件被重写为最终版（标题变成 # 日记总结）
 
-断点续跑状态固定在 scripts/batch_summary/output/summary_state.json（跨运行共享，重跑即续跑）。
+除此之外不再生成任何中间文件（无 summaries.json / progress.json / 运行状态.txt /
+待复核清单 / 日志文件）。断点续跑状态在 SQLite（entry_summaries 表），跨运行共享。
 
 运行期间终端会**自己**持续打印人类可读进度（默认每 30 秒一块，可 --heartbeat 调整）：
 不需要另开终端看进度，也不需要用 ps/grep/tail 之类的命令去猜任务状态。
@@ -34,7 +31,6 @@
 
 import argparse
 import io
-import json
 import logging
 import random
 import sys
@@ -103,7 +99,7 @@ def build_parser() -> argparse.ArgumentParser:
     mode.add_argument("--models", action="store_true", help="列出 LM Studio 可见模型后退出（确认模型名）")
     mode.add_argument("--test", action="store_true", help="抽样试跑，只打印结果，不写状态与输出文件")
     mode.add_argument("--all", action="store_true", help="全量生成（可中断续跑）")
-    mode.add_argument("--rebuild-md", action="store_true", help="不调用模型，仅用已有摘要重出 Markdown")
+    mode.add_argument("--rebuild-md", action="store_true", help="不调用模型，仅用已有摘要重写「中途预览.md」")
     mode.add_argument("--reset-summaries", action="store_true", help="只清空摘要相关表，不修改原始日记")
 
     parser.add_argument("--samples", type=int, default=10, help="--test 抽样条数（默认 10）")
@@ -138,7 +134,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--flat-output",
         action="store_true",
-        help="不建时间戳子目录，直接把产物写到输出根目录（旧行为）",
+        help="不建时间戳子目录，直接把「中途预览.md」写到输出根目录（旧行为）",
     )
     parser.add_argument(
         "--heartbeat",
@@ -162,7 +158,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--no-preview",
         action="store_true",
-        help="不生成运行期的「中途预览.md」（只保留跑完后的最终产物）",
+        help="不写任何文件（连「中途预览.md」也不生成，只打印进度）",
     )
     parser.add_argument("--base-url", help="覆盖 LM Studio 地址（仍强制本机地址）")
     parser.add_argument("--model", help="覆盖模型名（默认读取 .env 的 LLM_MODEL，留空则自动发现）")
@@ -171,28 +167,20 @@ def build_parser() -> argparse.ArgumentParser:
         help="覆盖思考强度：none=关闭思考（推理模型推荐，快很多）/low/medium/high；"
              "留空=不发送该参数（默认读 .env 的 LLM_REASONING_EFFORT）",
     )
-    parser.add_argument("--quiet", action="store_true", help="减少控制台输出（日志仍写入文件）")
+    parser.add_argument("--quiet", action="store_true", help="减少控制台输出（不打印心跳状态块）")
     return parser
 
 
 def build_run_paths(base_dir: Path, run_dir: Path) -> Dict[str, Path]:
     """本次运行的产物路径
 
-    结果类文件放 ``run_dir``（每次运行一个 YYMMDDHHMMSS 子目录，历史互不覆盖）；
-    断点续跑状态放 ``base_dir``（跨运行共享，重跑才能续跑）。
+    只有一个产物：``run_dir/中途预览.md``（每次运行一个 YYMMDDHHMMSS 子目录，
+    历史互不覆盖）；断点续跑状态在 SQLite 的 ``entry_summaries`` 表里，跨运行共享。
     """
     return {
         "base_dir": base_dir,
         "dir": run_dir,
-        "state": base_dir / bs_config.STATE_FILE_NAME,
-        "summaries": run_dir / bs_config.SUMMARIES_FILE_NAME,    # 结构化中间结果
-        "markdown": run_dir / bs_config.MARKDOWN_FILE_NAME,      # 最终产物：日记总结.md
-        "log": run_dir / bs_config.LOG_FILE_NAME,
-        "progress": run_dir / "progress.json",                  # 实时进度快照（status.py 用）
-        "status": run_dir / bs_config.STATUS_FILE_NAME,          # 最新状态块（打开即可看）
-        "preview": run_dir / bs_config.PREVIEW_FILE_NAME,        # 运行期"截至当前"的目录（节流刷新）
-        "pending_md": run_dir / bs_config.PENDING_MD_NAME,       # 未产出摘要的日记（含原文）
-        "pending_json": run_dir / bs_config.PENDING_JSON_NAME,
+        "preview": run_dir / bs_config.PREVIEW_FILE_NAME,   # 唯一产物：运行期=快照，跑完=最终版
     }
 
 
@@ -246,22 +234,18 @@ def preview_interval(args, settings) -> float:
 def build_reporter(
     args,
     settings,
-    paths: Optional[Dict[str, Path]],
     years,
     *,
     phase: str = "starting",
     phase_note: str = "",
 ) -> progress_mod.ProgressReporter:
-    """构造运行期进度记录器（控制台心跳 + progress.json + 运行状态.txt）"""
-    paths = paths or {}
+    """构造运行期进度记录器（只打印心跳状态块，不写任何文件）"""
     return progress_mod.ProgressReporter(
         scope=scope_label(years),
         phase=phase,
         phase_note=phase_note,
         interval=heartbeat_interval(args, settings),
         enabled=not getattr(args, "quiet", False) and not getattr(args, "no_heartbeat", False),
-        progress_file=paths.get("progress"),
-        status_file=paths.get("status"),
     )
 
 
@@ -418,14 +402,6 @@ def setup_emotion(args, settings, client, model, fingerprint_settings, store=Non
     return classifier, fingerprint
 
 
-# ---------------- 进度快照（实现见 progress.py，主程序与 status.py 共用） ----------------
-
-#: 进度快照（`progress.json` 与状态块共用同一份数据）
-build_progress_snapshot = progress_mod.build_progress_snapshot
-#: 原子写出进度快照
-write_progress_file = progress_mod.write_progress_file
-
-
 # ---------------- 中途预览（运行期间可随时打开） ----------------
 
 def body_signature(summary_state) -> Tuple[int, int]:
@@ -443,13 +419,12 @@ def body_signature(summary_state) -> Tuple[int, int]:
 class PreviewWriter:
     """运行期"中途预览"：节流重写 ``<运行目录>/中途预览.md``
 
-    全量跑要几小时，而最终 ``日记总结.md`` 只在整轮结束后写一次；本类把
-    **内存里已有的断点状态**渲染成"截至当前"的摘要目录，让用户中途就能看到结果。
+    全量跑要几小时，而最终版只在整轮结束后才写一次；本类把**内存里已有的结果**
+    渲染成"截至当前"的摘要目录，让用户中途就能看到结果，跑完再重写为最终版。
 
     设计要点（都是为了让预览"只用眼睛看，不影响任务"）：
 
-    * 只读内存状态：不读盘、不调模型、**不写 progress.json、不新建运行目录**，
-      因此不会干扰 ``status.py`` 对"最近一次运行"的判断；
+    * 只读内存状态：不读盘、不调模型、除本文件外不写任何东西；
     * 节流：距上次写入不足 ``every`` 秒就直接跳过；
     * 正文缓存：``(摘要条数, 情绪条数)`` 没变化时沿用上次渲染的正文（省掉一次重排），
       只更新头部进度；
@@ -498,31 +473,39 @@ class PreviewWriter:
 
     # -- 内部 --
     def _write(self, summary_state, *, current=None, phase="running") -> bool:
+        """写一次预览；``phase="done"`` 时写最终版（标题变成 # 日记总结）"""
         try:
-            signature = body_signature(summary_state)
-            if self._body is None or signature != self._last_signature:
-                records = collect_summaries(summary_state)     # 与最终产物同一套渲染逻辑
-                self._body = render.render_sections(records)
-                self._last_signature = signature
-            text = render.compose_preview(
-                render.preview_header(
-                    processed=self._processed, total=self._total,
-                    current=current, phase=phase, every=self.every,
-                ),
-                self._body,
-            )
+            if phase == "done":
+                text = render.render_markdown(collect_summaries(summary_state))
+            else:
+                signature = body_signature(summary_state)
+                if self._body is None or signature != self._last_signature:
+                    records = collect_summaries(summary_state)     # 与最终产物同一套渲染逻辑
+                    self._body = render.render_sections(records)
+                    self._last_signature = signature
+                text = render.compose_preview(
+                    render.preview_header(
+                        processed=self._processed, total=self._total,
+                        current=current, phase=phase, every=self.every,
+                    ),
+                    self._body,
+                )
         except Exception as exc:                            # 预览永远不能拖垮主流程
             logger.debug("中途预览渲染失败：%s", exc)
             return False
-        if progress_mod.write_text_atomic(self.path, text):
-            self._last_write = time.monotonic()
-            self.writes += 1
-            return True
-        return False
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            self.path.write_text(text, encoding="utf-8")
+        except OSError as exc:                              # 写不进去也不算任务失败
+            logger.debug("中途预览写入失败：%s（%s）", self.path, exc)
+            return False
+        self._last_write = time.monotonic()
+        self.writes += 1
+        return True
 
 
-class DatabaseSummaryView:
-    """SQLite 摘要的轻量内存视图，仅供现有进度与预览渲染接口使用。"""
+class SummaryView:
+    """SQLite 摘要的轻量内存视图（进度与预览渲染共用）"""
 
     def __init__(self, records=None):
         self.results = {str(record.get("entry_id")): dict(record) for record in (records or [])}
@@ -558,46 +541,39 @@ class DatabaseSummaryView:
 def process_entries(
     entries: List[Dict],
     client,
-    summary_state: state_mod.SummaryState,
+    summary_state: SummaryView,
     template: str,
     prompt_sha1_value: str,
     *,
     force: bool = False,
     quiet: bool = False,
     progress=None,
-    progress_file=None,
     year_label: str = "",
     reporter: Optional["progress_mod.ProgressReporter"] = None,
     preview: Optional["PreviewWriter"] = None,
-    store: Optional[SummaryStore] = None,
+    store: SummaryStore,
     algorithm_fingerprint_value: str = "",
     run_id: Optional[int] = None,
     emotion_classifier: Optional["emotion_mod.EmotionClassifier"] = None,
     emotion_only: bool = False,
     force_emotion: bool = False,
 ) -> Dict:
-    """逐篇调用模型写摘要并写入状态；已处理且内容未变的条目不再调用模型
+    """逐篇调用模型写摘要并写入 SQLite；已处理且内容未变的条目不再调用模型
 
     单篇失败只记录并继续（连续失败达到阈值才停止），Ctrl+C 由调用方处理。
-
-    摘要与情绪是**两条独立的缓存通道**（需要 ``store`` 才会启用情绪）：
+    摘要与情绪的缓存判定都在 SQLite（``store`` 是必填参数）：
 
     * 摘要命中且情绪也在：本篇不调用模型，计入 ``skipped``；
     * 摘要命中但情绪缺失/过期：只发一次情绪调用（``--emotion-only`` 就是这种模式）；
     * ``--force-emotion``：忽略情绪缓存重算（摘要仍按原有缓存规则）。
 
-    进度输出：
-
-    * 传了 ``reporter`` → 由 :class:`~scripts.batch_summary.progress.ProgressReporter`
-      统一负责心跳状态块、``progress.json`` 与 ``运行状态.txt``；
-    * 没传（旧调用方式 / 单测）→ 退回 ``progress`` 回调 + ``progress_file``。
-
-    中途查看结果：传了 ``preview`` → 期间节流刷新 ``中途预览.md``（不调模型、
-    不写 progress.json），随时打开就能看到"截至当前"的摘要目录。
+    进度输出：传了 ``reporter`` → 由 :class:`~scripts.batch_summary.progress.ProgressReporter`
+    统一打印心跳状态块（**只打印、不落盘**）；否则退回 ``progress`` 回调。
+    中途查看结果：传了 ``preview`` → 期间节流刷新「中途预览.md」（不调模型）。
 
     ``status`` 口径：``ok`` = 产出摘要；``empty`` = 空正文或模型给出空答案；
-    ``failed`` = 调用失败。此口径与统计数字、状态文件保持一致。
-    情绪同理：``emotions`` = 有标签；``emotion_empty`` = 空正文；``emotion_failed`` = 调用失败。
+    ``failed`` = 调用失败。情绪同理：``emotions`` = 有标签；``emotion_empty`` = 空正文；
+    ``emotion_failed`` = 调用失败。
     """
     total = len(entries)
     stats = {"total": total, "ok": 0, "empty": 0, "failed": 0, "skipped": 0, "summaries": 0,
@@ -614,26 +590,18 @@ def process_entries(
     started = time.monotonic()
 
     def snapshot(phase: str, index: int, current=None, entry_elapsed=None, note=None):
-        """刷新进度（reporter 负责落盘；否则退回旧的 progress.json 写法）"""
-        if reporter is not None:
-            if phase == "done":
-                reporter.update(index, stats=stats, note=note)
-                reporter.set_phase("done")
-                reporter.clear_current()
-            else:
-                reporter.update(
-                    index, stats=stats, current=current,
-                    entry_elapsed=entry_elapsed, note=note,
-                )
+        """刷新进度（只打印心跳状态块，不落盘）"""
+        if reporter is None:
             return
-        write_progress_file(
-            progress_file,
-            build_progress_snapshot(
-                phase=phase, total=total, index=index, stats=stats,
-                started=started, current=current, entry_elapsed=entry_elapsed,
-                year_label=year_label,
-            ),
-        )
+        if phase == "done":
+            reporter.update(index, stats=stats, note=note)
+            reporter.set_phase("done")
+            reporter.clear_current()
+        else:
+            reporter.update(
+                index, stats=stats, current=current,
+                entry_elapsed=entry_elapsed, note=note,
+            )
 
     def preview_tick(index, current=None):
         """刷新中途预览（节流 + 失败静默；没传 preview 时什么都不做）"""
@@ -648,17 +616,13 @@ def process_entries(
     for index, entry in enumerate(entries, 1):
         entry_id = entry.get("id")
         content = entry.get("content") or ""
-        digest = source_hash(content) if store else state_mod.content_hash(content)
+        digest = source_hash(content)
         stable_key = make_entry_key(entry)
-        current_cache_key = make_cache_key(stable_key, digest, algorithm_fingerprint_value) if store else ""
-        if store:
-            summary_skip = not force and store.is_cache_hit(stable_key, current_cache_key)
-            reason = "done" if summary_skip else "database-miss"
-        else:
-            summary_skip, reason = summary_state.should_skip(entry_id, digest, force=force)
+        current_cache_key = make_cache_key(stable_key, digest, algorithm_fingerprint_value)
+        summary_skip = not force and store.is_cache_hit(stable_key, current_cache_key)
 
         # -- 情绪：与摘要各自独立的缓存通道（摘要命中也要把缺的情绪补上）--
-        emotion_active = bool(store and emotion_classifier and emotion_classifier.enabled)
+        emotion_active = bool(emotion_classifier and emotion_classifier.enabled)
         emotion_key = ""
         do_emotion = False
         if emotion_active:
@@ -666,7 +630,6 @@ def process_entries(
             do_emotion = force_emotion or not store.emotion_cache_hit(stable_key, emotion_key)
         if emotion_only:
             summary_skip = True        # --emotion-only：摘要一律复用，不重新生成
-            reason = "emotion-only"
 
         if summary_skip and not do_emotion:
             stats["skipped"] += 1
@@ -753,7 +716,7 @@ def process_entries(
                 record_tracked = False        # 无摘要记录：只在库里补情绪，不进内存视图
         else:
             summary_state.put(entry_id, record)
-        if store and not summary_skip:
+        if not summary_skip:
             store.upsert(
                 entry, entry_key=stable_key, source_hash_value=digest,
                 algorithm_fingerprint=algorithm_fingerprint_value,
@@ -766,8 +729,6 @@ def process_entries(
                     generated=stats["ok"] + stats["empty"], reused=stats["skipped"],
                     failed=stats["failed"],
                 )
-        elif not store:
-            summary_state.save_if_needed()
 
         # -- 情绪判断：摘要之后的第二次（很短）调用，缓存与摘要彼此独立 --
         if do_emotion and summary_generated and status == "failed":
@@ -854,8 +815,6 @@ def process_entries(
     stats["completed"] = completed
     if emotion_classifier is not None:
         stats["emotion_calls"] = int(getattr(emotion_classifier, "call_count", 0))
-    if not store:
-        summary_state.save(force=True)
     snapshot(
         "done", total,
         note=f"处理结束：有摘要 {stats['ok']} ｜ 空摘要 {stats['empty']} ｜ 失败 {stats['failed']} "
@@ -868,136 +827,12 @@ def process_entries(
 
 # ---------------- 汇总输出 ----------------
 
-def collect_summaries(summary_state: state_mod.SummaryState) -> List[Dict]:
+def collect_summaries(summary_state: SummaryView) -> List[Dict]:
     """取出状态里所有已产出的摘要（按日期排序，不调用模型）"""
     return summary_state.summary_records()
 
 
-def collect_pending(summary_state, settings) -> List[Dict]:
-    """收集"没有产出摘要"的条目原文，供人工复核
-
-    判定依据：``status == "failed"``（调用失败）或记录里没有可用摘要
-    （空正文、模型给出空答案）。全程只读数据库。
-    """
-    records = [
-        record for record in sorted(
-            summary_state.results.values(),
-            key=lambda r: (str(r.get("entry_date") or ""), int(r.get("entry_id") or 0)),
-        )
-        if record.get("status") == "failed" or not state_mod.has_summary(record)
-    ]
-    if not records:
-        return []
-
-    reader = dal.DiaryReader(settings["db_path"])
-    items: List[Dict] = []
-    for record in records:
-        entry = reader.entry(record.get("entry_id")) or {}
-        status = record.get("status")
-        if status != "failed" and not state_mod.has_summary(record):
-            status = "empty"      # 没有摘要但不是失败 -> 一律按"空摘要"呈现
-        items.append({
-            "entry_id": record.get("entry_id"),
-            "entry_date": str(record.get("entry_date") or entry.get("date") or ""),
-            "entry_type": record.get("entry_type") or entry.get("entry_type"),
-            "word_count": record.get("word_count") or entry.get("word_count") or 0,
-            "status": status,
-            "error": record.get("error"),
-            "file_source": entry.get("file_source"),
-            "content": entry.get("content") or "",
-        })
-    return items
-
-
-def write_pending_outputs(paths: Dict[str, Path], items: List[Dict]) -> Dict[str, Path]:
-    """写出"待复核"清单（Markdown 供人读，JSON 供后续加工）"""
-    paths["pending_md"].write_text(render.render_pending_markdown(items), encoding="utf-8")
-    paths["pending_json"].write_text(
-        json.dumps(
-            {"generated_at": state_mod.now_iso(), "count": len(items), "items": items},
-            ensure_ascii=False, indent=2,
-        ),
-        encoding="utf-8",
-    )
-    return paths
-
-
-def build_summaries_payload(
-    summary_state,
-    records: List[Dict],
-    *,
-    model: str,
-    prompt_sha1_value: str,
-    entry_types: Sequence[str],
-    years: Optional[Sequence[int]],
-    stats: Optional[Dict] = None,
-) -> Dict:
-    """结构化中间结果（每篇日记一条摘要记录，便于以后重新生成 Markdown）"""
-    keys = ("entry_id", "entry_date", "entry_type", "word_count", "status", "summary")
-    entries = [
-        {k: record.get(k) for k in keys}
-        for record in sorted(
-            summary_state.results.values(),
-            key=lambda r: (str(r.get("entry_date") or ""), int(r.get("entry_id") or 0)),
-        )
-    ]
-    return {
-        "version": 2,
-        "generated_at": state_mod.now_iso(),
-        "model": model,
-        "prompt_sha1": prompt_sha1_value,
-        "entry_types": list(entry_types),
-        "years": list(years) if years else None,
-        "stats": stats or {},
-        "state_stats": summary_state.stats(),
-        "summary_count": len(records),
-        "entries": entries,
-    }
-
-
-def build_database_payload(all_records, records, *, model, entry_types, years, stats=None):
-    """从 SQLite 当前记录构造导出 JSON（含情绪标签与情绪状态）"""
-    keys = ("entry_key", "entry_id", "entry_date", "entry_type", "word_count",
-            "status", "summary", "emotion", "emotion_status", "model", "generated_at")
-    return {
-        "version": 4,
-        "generated_at": state_mod.now_iso(),
-        "model": model,
-        "entry_types": list(entry_types),
-        "years": list(years) if years else None,
-        "stats": stats or {},
-        "summary_count": len(records),
-        "entries": [{key: record.get(key) for key in keys} for record in all_records],
-    }
-
-
-def collect_database_pending(records, settings):
-    """从 SQLite 状态收集失败/空摘要并关联当前原文。"""
-    reader = dal.DiaryReader(settings["db_path"])
-    items = []
-    for record in records:
-        if record.get("status") not in ("empty", "failed"):
-            continue
-        entry = reader.entry(record.get("entry_id")) or {}
-        items.append({
-            **{key: record.get(key) for key in
-               ("entry_id", "entry_date", "entry_type", "word_count", "status")},
-            "error": None,
-            "file_source": entry.get("file_source"),
-            "content": entry.get("content") or "",
-        })
-    return items
-
-
-def write_outputs(paths: Dict[str, Path], payload: Dict, records: List[Dict]) -> Dict[str, Path]:
-    """写出 Markdown 与 JSON（Markdown 完全由 Python 生成）"""
-    markdown = render.render_markdown(records)
-    paths["summaries"].write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-    paths["markdown"].write_text(markdown, encoding="utf-8")
-    return paths
-
-
-def print_summary(records: List[Dict], summary_state, stats: Optional[Dict] = None):
+def print_summary(records: List[Dict], stats: Optional[Dict] = None):
     years = render.summarize_years(records)
     print("")
     print("=" * 60)
@@ -1076,9 +911,9 @@ def cmd_test(args, settings, paths: Dict[str, Path]) -> int:
     entry_types = resolve_entry_types(args)
     years = parse_years(args)
     reporter = build_reporter(
-        args, settings, None, years,
+        args, settings, years,
         phase="loading", phase_note="数据库只读，不会改动日记",
-    )   # 只打印，不写任何进度文件
+    )   # 只打印，不写任何文件
     reporter.start()
     try:
         entries = load_entries(args, settings, entry_types)
@@ -1149,14 +984,10 @@ def cmd_all(args, settings, paths: Dict[str, Path]) -> int:
     """--all：全量提取（支持 Ctrl+C 断点续跑；运行期间持续打印人类可读进度）"""
     entry_types = resolve_entry_types(args)
     years = parse_years(args)
-    try:
-        state_mod.setup_logging(paths["log"], quiet=args.quiet)
-    except OSError as exc:
-        print(f"[错误] 无法写入日志文件：{exc}")
-        return EXIT_ERROR
+    state_mod.setup_logging(quiet=args.quiet)
 
     reporter = build_reporter(
-        args, settings, paths, years,
+        args, settings, years,
         phase="loading", phase_note="数据库只读，不会改动日记",
     )
     reporter.attach_logger(logger)                 # 日志（含重试警告）→ 状态块的"最近日志"
@@ -1204,7 +1035,7 @@ def cmd_all(args, settings, paths: Dict[str, Path]) -> int:
         reporter.set_total(len(entries), days_total=days_total)
 
         previous_records = SummaryRepository(settings["db_path"]).all_records()
-        summary_state = DatabaseSummaryView(previous_records)
+        summary_state = SummaryView(previous_records)
         previous = {name: sum(r.get("status") == name for r in previous_records)
                     for name in ("ok", "empty", "failed")}
         print(
@@ -1220,10 +1051,7 @@ def cmd_all(args, settings, paths: Dict[str, Path]) -> int:
             )
         else:
             print("情绪判断：已关闭（--no-emotion 或 .env 的 EMOTION_ENABLED=0）")
-        print(
-            f"运行期间每 {reporter.interval:.0f} 秒自动打印一次状态；"
-            f"也可随时打开 {paths['status']} 查看"
-        )
+        print(f"运行期间每 {reporter.interval:.0f} 秒自动打印一次状态块（只打印，不写文件）")
         preview = PreviewWriter(
             paths.get("preview"),
             every=preview_interval(args, settings),
@@ -1266,44 +1094,31 @@ def cmd_all(args, settings, paths: Dict[str, Path]) -> int:
         database_records = repository.all_records()
         records = [record for record in database_records if record.get("status") == "ok"]
 
-        reporter.set_phase("saving", "写 Markdown / JSON / 待复核清单")
-        payload = build_database_payload(database_records, records, model=model,
-                                         entry_types=entry_types, years=years, stats=stats)
-        write_outputs(paths, payload, records)
-        pending = collect_database_pending(database_records, settings)
-        write_pending_outputs(paths, pending)
+        reporter.set_phase("saving", "写「中途预览.md」（不调用模型）")
 
-        print_summary(records, summary_state, stats)
+        print_summary(records, stats)
         preview.finish(summary_state, processed=len(entries), total=len(entries), phase="done")
         final_run_status = "completed" if stats["completed"] else "failed"
         store.update_run(run_id, status=final_run_status, processed=len(entries),
                          generated=stats["ok"] + stats["empty"], reused=stats["skipped"],
                          failed=stats["failed"])
         reporter.set_phase("done")
-        print(f"本次运行目录: {paths['dir']}")
-        print(f"已生成: {paths['markdown']}")
         if preview.enabled:
-            print(f"中途预览（含运行期快照）: {paths['preview']}")
-        print(f"待复核(未产出摘要) {len(pending)} 篇 → {paths['pending_md']}")
-        print(f"状态快照: {paths['status']} | 进度: {paths['progress']}")
-        print(f"摘要主存储: {settings['db_path']} | 日志: {paths['log']}")
+            print(f"已写出: {paths['preview']}（含本次全部结果）")
+        else:
+            print("本次未写文件（--no-preview）：结果都在 SQLite 里，可用 --rebuild-md 重写")
+        print(f"摘要主存储: {settings['db_path']}")
         return EXIT_OK
     finally:
         reporter.stop()
 
 
 def cmd_rebuild(args, settings, paths: Dict[str, Path]) -> int:
-    """--rebuild-md：不调用模型，用已有摘要重新生成 Markdown 与 JSON"""
-    years = parse_years(args)
-    try:
-        state_mod.setup_logging(paths["log"], quiet=args.quiet)
-    except OSError as exc:
-        print(f"[错误] 无法写入日志文件：{exc}")
-        return EXIT_ERROR
-
+    """--rebuild-md：不调用模型，用 SQLite 里已有的摘要重写「中途预览.md」"""
+    state_mod.setup_logging(quiet=args.quiet)
     reporter = build_reporter(
-        args, settings, paths, years,
-        phase="loading", phase_note="读取断点状态，不调用模型",
+        args, settings, [],
+        phase="loading", phase_note="读取 SQLite 摘要，不调用模型",
     )
     reporter.attach_logger(logger)
     reporter.start()
@@ -1316,37 +1131,28 @@ def cmd_rebuild(args, settings, paths: Dict[str, Path]) -> int:
             print("请先运行：python scripts/batch_summary/main.py --all")
             return EXIT_ERROR
 
-        reporter.set_total(len(database_records))
+        records = [record for record in database_records if record.get("status") == "ok"]
         state_stats = {name: sum(r.get("status") == name for r in database_records)
                        for name in ("ok", "empty", "failed")}
+        reporter.set_total(len(records))
         reporter.update(
-            len(database_records),
+            len(records),
             stats={
                 "ok": state_stats.get("ok", 0),
                 "empty": state_stats.get("empty", 0),
                 "failed": state_stats.get("failed", 0),
                 "skipped": 0,
-                "summaries": state_stats["ok"],
+                "summaries": len(records),
             },
             note=f"从 SQLite 读入 {len(database_records)} 篇（不调用模型）",
         )
-        reporter.set_phase("merging", "汇总生成目录，不调用模型")
-        records = [record for record in database_records if record.get("status") == "ok"]
+        reporter.set_phase("saving", "写「中途预览.md」（不调用模型）")
+        paths["preview"].parent.mkdir(parents=True, exist_ok=True)
+        paths["preview"].write_text(render.render_markdown(records), encoding="utf-8")
 
-        reporter.set_phase("saving", "写 Markdown / JSON / 待复核清单")
-        payload = build_database_payload(
-            database_records, records, model="", entry_types=resolve_entry_types(args),
-            years=years, stats={"source": "rebuild-md"},
-        )
-        write_outputs(paths, payload, records)
-        pending = collect_database_pending(database_records, settings)
-        write_pending_outputs(paths, pending)
-
-        print_summary(records, None)
+        print_summary(records)
         reporter.set_phase("done")
-        print(f"已重新生成: {paths['markdown']}（本次未调用模型）")
-        print(f"待复核(未产出摘要) {len(pending)} 篇 → {paths['pending_md']}")
-        print(f"状态快照: {paths['status']} | 进度: {paths['progress']}")
+        print(f"已重新生成: {paths['preview']}（本次未调用模型）")
         return EXIT_OK
     finally:
         reporter.stop()

@@ -4,31 +4,25 @@
 
 设计目标：**程序自己在运行期间持续输出可读进度**，不需要另开终端，
 也不需要用 ``ps``/``grep``/``tail`` 之类命令去猜任务状态。
+所有内容**只打印到终端，不落盘**（唯一的产物是「中途预览.md」）。
 
 三个东西：
 
-* :func:`build_progress_snapshot` —— 进度快照（纯函数）。同一份数据同时用于
-  写 ``progress.json`` 与打印，保证"文件里看到的"和"控制台看到的"完全一致。
-* :func:`format_blocks` —— 把快照渲染成带 ``[HH:MM:SS]`` 前缀的中文状态块，
-  主程序心跳与 ``status.py`` 看板共用（两处格式永不漂移）。
+* :func:`build_progress_snapshot` —— 进度快照（纯函数）；
+* :func:`format_blocks` —— 把快照渲染成带 ``[HH:MM:SS]`` 前缀的中文状态块；
 * :class:`ProgressReporter` —— 带后台心跳线程的进度记录器：
 
   - 每 ``interval`` 秒打印一次状态块（这就是"心跳"，证明任务还活着）；
-  - 同时把最新状态块覆盖写到 ``运行状态.txt``（零命令查看：直接打开文件即可）；
-  - 每处理一篇就原子更新 ``progress.json``（供 ``status.py`` 读取）；
   - 所有打印共用一把锁，心跳块不会插进逐篇输出中间；
   - :meth:`ProgressReporter.attach_logger` 把日志（含重试警告）变成"最近日志"行。
 """
 
-import json
 import logging
-import os
 import re
 import sys
 import threading
 import time
 from datetime import datetime, timedelta
-from pathlib import Path
 from typing import Dict, List, Optional
 
 from scripts.batch_summary import config as bs_config
@@ -43,7 +37,7 @@ PHASE_LABELS = {
     "merging": "汇总生成总结",
     "saving": "保存结果",
     "done": "已完成",
-    "running": "运行中",            # 兼容旧版 progress.json 里的 phase 取值
+    "running": "运行中",            # 兼容旧快照里的 phase 取值
 }
 BAR_WIDTH = 30
 _MIN_INTERVAL = 0.01               # 心跳最小间隔（防止把终端刷爆）
@@ -108,7 +102,7 @@ def build_progress_snapshot(
     days_total: int = 0,
     wait_seconds: Optional[float] = None,
 ) -> Dict:
-    """当前进度快照（``progress.json`` 与状态块共用同一份数据）"""
+    """当前进度快照（心跳状态块的数据源）"""
     done = stats["ok"] + stats["empty"] + stats["failed"]
     elapsed = max(time.monotonic() - started, 0.0)
     avg = elapsed / done if done else 0.0
@@ -151,7 +145,7 @@ def build_progress_snapshot(
     }
 
 
-# ---------------- 状态块渲染（主程序与 status.py 共用） ----------------
+# ---------------- 状态块渲染（控制台心跳） ----------------
 
 def format_blocks(snapshot: Optional[Dict], *, now=None) -> str:
     """把进度快照渲染成"人类可读状态块"（每行都带 ``[HH:MM:SS]`` 前缀）"""
@@ -228,29 +222,6 @@ def format_blocks(snapshot: Optional[Dict], *, now=None) -> str:
     return "\n".join(lines)
 
 
-# ---------------- 落盘 ----------------
-
-def write_text_atomic(path, text: str) -> bool:
-    """原子写文本（失败不影响主流程）"""
-    if not path:
-        return False
-    try:
-        target = Path(path)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        tmp = target.with_name(target.name + ".tmp")
-        tmp.write_text(text, encoding="utf-8")
-        os.replace(tmp, target)
-        return True
-    except OSError as exc:
-        logger.debug("文本写入失败：%s（%s）", path, exc)
-        return False
-
-
-def write_progress_file(path, snapshot: Dict) -> bool:
-    """原子写出进度快照（``status.py`` 读它；也可自己打开看）"""
-    return write_text_atomic(path, json.dumps(snapshot, ensure_ascii=False, indent=2) + "\n")
-
-
 # ---------------- 心跳记录器 ----------------
 
 class _LogHandler(logging.Handler):
@@ -277,13 +248,11 @@ class _LogHandler(logging.Handler):
 
 
 class ProgressReporter:
-    """运行期进度记录器：控制台心跳 + ``progress.json`` + ``运行状态.txt``
+    """运行期进度记录器：只负责控制台心跳（不写任何文件）
 
     典型用法（主程序里）::
 
-        reporter = ProgressReporter(scope="2025 年", interval=30,
-                                    progress_file=paths["progress"],
-                                    status_file=paths["status"])
+        reporter = ProgressReporter(scope="2025 年", interval=30)
         reporter.start()                      # 立刻打一块，之后每 interval 秒再打
         reporter.set_phase("loading", "正在读取日记")
         reporter.set_total(len(entries), days_total=328)
@@ -303,8 +272,6 @@ class ProgressReporter:
         interval: Optional[float] = None,
         stream=None,
         enabled: bool = True,
-        progress_file=None,
-        status_file=None,
     ):
         self._lock = threading.RLock()
         self._stream = stream
@@ -313,8 +280,6 @@ class ProgressReporter:
             _MIN_INTERVAL,
         )
         self._enabled = bool(enabled)
-        self._progress_file = Path(progress_file) if progress_file else None
-        self._status_file = Path(status_file) if status_file else None
         self._scope = scope
         self._total = int(total or 0)
         self._days_total = int(days_total or 0)
@@ -333,7 +298,7 @@ class ProgressReporter:
         self._log_handler = None
         self._log_logger = None
 
-    # -- 只读属性（测试与 status.py 用） --
+    # -- 只读属性（测试用） --
     @property
     def enabled(self) -> bool:
         return self._enabled
@@ -348,7 +313,7 @@ class ProgressReporter:
 
     # -- 状态块 / 快照 --
     def snapshot(self) -> Dict:
-        """当前进度快照（与写入 ``progress.json`` 的内容完全一致）"""
+        """当前进度快照（心跳打印用）"""
         with self._lock:
             wait = None
             if self._current is not None and self._current_started is not None:
@@ -387,7 +352,6 @@ class ProgressReporter:
             changed = (phase != self._phase) or ((note or "") != self._phase_note)
             self._phase = phase
             self._phase_note = note or ""
-            self._write_files()
             if changed:
                 self.print_block()
 
@@ -397,7 +361,6 @@ class ProgressReporter:
             self._total = max(int(total or 0), 0)
             if days_total is not None:
                 self._days_total = max(int(days_total or 0), 0)
-            self._write_files()
 
     def update(
         self,
@@ -426,13 +389,11 @@ class ProgressReporter:
                 self._last_entry_seconds = entry_elapsed
             if note:
                 self._last_log = str(note)
-            self._write_files()
 
     def note(self, text: str):
         """更新"最近日志"这一行"""
         with self._lock:
             self._last_log = str(text or "").strip()
-            self._write_files()
 
     def clear_current(self):
         """清掉"正在处理"信息（收尾时用，避免状态块显示过期条目）"""
@@ -440,7 +401,6 @@ class ProgressReporter:
             self._current = None
             self._current_started = None
             self._last_entry_seconds = None
-            self._write_files()
 
     def emit(self, text: str):
         """线程安全打印一行普通进度（与心跳块共用锁，不会互相插行）"""
@@ -491,15 +451,6 @@ class ProgressReporter:
         while not self._stop_event.wait(self._interval):
             self.print_block()
 
-    def _write_files(self) -> Dict:
-        """刷新 ``progress.json`` 与 ``运行状态.txt``（同一份快照）"""
-        snapshot = self.snapshot()
-        if self._progress_file:
-            write_progress_file(self._progress_file, snapshot)
-        if self._status_file:
-            write_text_atomic(self._status_file, format_blocks(snapshot) + "\n")
-        return snapshot
-
     def _write(self, text: str):
         stream = self._stream if self._stream is not None else sys.stdout
         try:
@@ -517,6 +468,4 @@ __all__: List[str] = [
     "phase_label",
     "progress_bar",
     "scope_text",
-    "write_progress_file",
-    "write_text_atomic",
 ]

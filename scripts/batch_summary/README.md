@@ -22,10 +22,24 @@ python scripts/batch_summary/main.py --emotion-only     # 只补情绪（摘要�
 - `summary_runs`：批处理运行状态（同时记录本轮使用的摘要/情绪算法指纹）；
 - `summary_schema_migrations`：schema 版本。
 
-SQLite 是唯一摘要主状态。Markdown、JSON、中途预览、进度和待复核文件均为派生产物。
-`日记总结.md` 与 `中途预览.md` 的每行都是「日期 +【情绪】+ 摘要」，两边正文逐行一致
-（`--no-emotion` / 情绪判断失败 / 空正文的篇目省略方括号）。
+SQLite 是唯一主状态（摘要 + 情绪 + 断点续跑），产物只有一个文件。
 每篇摘要/情绪处理结束后立即提交，因此中断后已提交记录不会丢失。
+
+## 产物：只有一个文件
+
+```
+output/YYMMDDHHMMSS/
+└── 中途预览.md          # 唯一文件（运行期=快照，跑完=最终版）
+```
+
+- 运行期间：`# 日记总结（中途预览）` + 进度行 + 已总结的内容（默认每 60 秒刷新）；
+- 跑完：同一个文件被重写为最终版（`# 日记总结` + 全部内容）；
+- 中断：重写为中断时的快照，重跑同一命令即可续跑；
+- `--no-preview`：什么都不写（结果都在 SQLite 里，随时可用 `--rebuild-md` 重写）。
+
+除此之外**不生成任何中间文件**：没有 `summaries.json`、`progress.json`、`运行状态.txt`、
+日志文件、`待复核` 清单，也没有旧版的 `summary_state.json`（断点续跑改由 SQLite 承担）。
+每行都是「日期 +【情绪】+ 摘要」（`--no-emotion` / 情绪判断失败 / 空正文的篇目省略方括号）。
 
 ## 情绪判断（摘要之外的第二条数据）
 
@@ -47,9 +61,9 @@ SQLite 是唯一摘要主状态。Markdown、JSON、中途预览、进度和待�
 | `--force-emotion` | 忽略情绪缓存重算情绪（摘要仍按原有缓存规则） |
 
 情绪结果会写入 `entry_summaries.emotion / emotion_status`，网页端「日记摘要」页可按下拉筛选；
-同时 `日记总结.md` / `中途预览.md` 的每一行会带上 `【标签】`（如 `- 0120【快乐】今天去公园散步……`），
+同时预览文件的每一行会带上 `【标签】`（如 `- 0120【快乐】今天去公园散步……`），
 标签来自模型判断，Markdown 这一层不做任何猜测。`--emotion-only` 只补情绪时，
-中途预览同样会因为情绪条数变化而重排，不必等最终产物。
+预览同样会因为情绪条数变化而重排，不必等跑完。
 
 ## 缓存规则
 
@@ -83,11 +97,11 @@ SQLite 是唯一摘要主状态。Markdown、JSON、中途预览、进度和待�
 
 ## 导出与重置
 
-`--rebuild-md` 完全不调用模型，从 SQLite 重新生成当前运行目录中的：
+`--rebuild-md` 完全不调用模型，从 SQLite 重新写出当前运行目录里的 `中途预览.md`（最终版）：
 
-- `日记总结.md`
-- `summaries.json`（version 4，每篇含 `emotion` / `emotion_status`）
-- `待复核_未产出摘要.md/json`
+```bash
+python scripts/batch_summary/main.py --rebuild-md
+```
 
 只重建派生摘要数据时使用：
 
@@ -100,12 +114,11 @@ python scripts/batch_summary/main.py --reset-summaries
 
 ## 进度与安全
 
-- `--heartbeat SECONDS` / `--no-heartbeat`
-- `--preview-every SECONDS` / `--no-preview`
-- 状态块与 `progress.json` 会额外显示情绪计数（有情绪 / 情绪失败 / 情绪跳过）；
-  旧版 `progress.json` 没有这些字段时照常显示，不会报错。
+- `--heartbeat SECONDS` / `--no-heartbeat`：控制台状态块的打印间隔（**只打印，不落盘**）
+- `--preview-every SECONDS` / `--no-preview`：预览刷新间隔；`--no-preview` = 不写任何文件
+- 状态块会额外显示情绪计数（有情绪 / 情绪失败 / 情绪跳过）
 - 默认绑定本地 LM Studio；只有显式 `ALLOW_REMOTE_LLM=1` 才允许远程地址。
-- 日志和错误字段不保存完整正文或 Prompt。
+- 日志与错误字段不保存完整正文或 Prompt（日志只打到控制台）。
 - Web 使用只读连接，batch 是摘要表（含情绪列）的唯一写入者。
 
 ## 测试

@@ -2,8 +2,7 @@
 # -*- coding: utf-8 -*-
 """日记批量总结 - 单元测试（不需要真实 LLM）
 
-覆盖：LLM 本地地址守卫、思考开关、Prompt 装载、摘要清洗、Markdown 渲染、
-待复核清单渲染。
+覆盖：LLM 本地地址守卫、思考开关、Prompt 装载、摘要清洗、Markdown 渲染。
 
 运行：
 
@@ -337,7 +336,7 @@ class RenderTests(unittest.TestCase):
         self.assertIn("- 0122 照常上班。", lines)              # 没判断情绪 -> 保持旧格式
         markdown = render.render_markdown(records)
         self.assertIn("- 0120【快乐】周末去公园散步。", markdown)
-        self.assertEqual(render.count_lines(markdown), 3)
+        self.assertEqual(sum(1 for line in markdown.splitlines() if line.startswith("- ")), 3)
 
     def test_blank_or_missing_emotion_keeps_old_format(self):
         """--no-emotion / 判断失败 / 空正文都拿不到标签，行格式与旧版逐字一致"""
@@ -366,38 +365,6 @@ class RenderTests(unittest.TestCase):
             make_record(3, "2016-01-20"),
         ]
         self.assertEqual(render.summarize_years(records), {2015: 2, 2016: 1})
-
-    def test_count_lines(self):
-        markdown = render.render_markdown([make_record(1, "2015-01-20")])
-        self.assertEqual(render.count_lines(markdown), 1)
-
-
-class PendingReviewTests(unittest.TestCase):
-    """待复核清单（把"没有产出摘要"的日记原文导出，供人工确认）"""
-
-    def test_render_contains_meta_and_original_text(self):
-        items = [
-            {"entry_id": 7, "entry_date": "2025-01-02", "entry_type": "multi_day",
-             "word_count": 90, "status": "empty", "error": None,
-             "content": "今天上班，什么都没发生。"},
-            {"entry_id": 8, "entry_date": "2025-01-03", "entry_type": "note",
-             "word_count": 10, "status": "failed", "error": "模型返回内容为空",
-             "content": "只有一行。"},
-        ]
-        text = render.render_pending_markdown(items)
-        self.assertIn("条数：2", text)
-        self.assertIn("2025-01-02", text)
-        self.assertIn("entry_id=7", text)
-        self.assertIn("今天上班，什么都没发生。", text)
-        self.assertIn("空摘要", text)
-        self.assertIn("处理失败", text)
-        self.assertIn("模型返回内容为空", text)
-        self.assertEqual(text.count("---"), 2)
-
-    def test_render_empty_list(self):
-        text = render.render_pending_markdown([])
-        self.assertIn("条数：0", text)
-        self.assertIn("处理失败 0 条", text)
 
 
 if __name__ == "__main__":

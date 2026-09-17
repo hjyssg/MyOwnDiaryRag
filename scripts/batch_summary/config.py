@@ -44,15 +44,7 @@ PROMPT_FILE = BASE_DIR / "prompts" / "diary_summary_prompt.txt"
 OUTPUT_DIR = BASE_DIR / "output"
 # 每次运行的产物放在 output/YYMMDDHHMMSS/ 子目录里，互不覆盖，便于回头对比
 RUN_DIR_FORMAT = "%y%m%d%H%M%S"
-STATE_FILE_NAME = "summary_state.json"       # 断点续跑状态：固定在 output/ 根目录（跨运行共享）
-STATUS_FILE_NAME = "运行状态.txt"             # 最新状态块：双击即可查看，不需要任何命令
-MARKDOWN_FILE_NAME = "日记总结.md"            # 最终产物：按年份排列的逐篇摘要
-SUMMARIES_FILE_NAME = "summaries.json"       # 结构化中间结果（每篇一条摘要记录）
-LOG_FILE_NAME = "batch_summary.log"
-PENDING_MD_NAME = "待复核_未产出摘要.md"       # 处理失败/空摘要的日记（含原文）
-PENDING_JSON_NAME = "待复核_未产出摘要.json"
-LOG_FILE = OUTPUT_DIR / LOG_FILE_NAME
-STATE_FILE = OUTPUT_DIR / STATE_FILE_NAME    # 兼容旧引用（state.SummaryState 默认路径）
+PREVIEW_FILE_NAME = "中途预览.md"            # 唯一产物（运行期=快照，跑完=最终版）
 
 # ---------------- 实时进度（心跳） ----------------
 # 主程序运行期间每隔多少秒打印一次"人类可读状态块"（可 --heartbeat 覆盖，.env 亦可用
@@ -60,11 +52,11 @@ STATE_FILE = OUTPUT_DIR / STATE_FILE_NAME    # 兼容旧引用（state.SummarySt
 HEARTBEAT_SECONDS = 30
 HEARTBEAT_MIN_SECONDS = 5
 
-# ---------------- 中途预览（运行期间可随时打开） ----------------
-# 全量跑要几小时，最终 日记总结.md 只在整轮结束后写一次；因此运行期间额外维护一份
-# "截至当前"的 中途预览.md（可 --preview-every 覆盖，.env 亦可用 SUMMARY_PREVIEW_SECONDS 覆盖），
-# 随时用编辑器打开就能看到已总结完的部分，不用等跑完。
-PREVIEW_FILE_NAME = "中途预览.md"            # 放在本次运行目录里，与最终产物并存
+# ---------------- 唯一产物：中途预览.md ----------------
+# 全量跑要几小时，所以运行期间就持续维护这份"截至当前"的目录（节流刷新，可 --preview-every
+# 覆盖，.env 亦可用 SUMMARY_PREVIEW_SECONDS 覆盖），随时打开就能看到已总结完的部分；
+# 跑完 / 中断时把同一个文件重写为最终版（标题变成 # 日记总结）。
+# 除此之外不生成任何文件（无 summaries.json / progress.json / 运行状态.txt / 日志 / 待复核清单）。
 PREVIEW_EVERY_SECONDS = 60                   # 每隔多少秒刷新一次（0 = 关闭）
 PREVIEW_MIN_SECONDS = 5                      # 刷新间隔下限，防止把磁盘写爆
 
@@ -89,7 +81,7 @@ LOCAL_HOSTS = ("127.0.0.1", "localhost", "::1")
 MAX_SUMMARY_CHARS = 60                 # 单篇摘要硬上限：Prompt 要求 20~40 字（最多 50），超出按句读截断
 CONTENT_HEAD_CHARS = 4000              # 超长正文保留前部
 CONTENT_TAIL_CHARS = 1000              # 超长正文保留后部
-# 模型的"空答案"：清洗后与这些完全相等时视为没有摘要（记为 empty，进"待复核"清单）
+# 模型的"空答案"：清洗后与这些完全相等时视为没有摘要（记为 empty，不写入摘要）
 REJECT_SUMMARIES = {
     "无", "无。", "没有", "暂无", "无内容", "无摘要", "无法总结", "空",
     "none", "null", "nan", "na", "n/a", "-", "—", "……", "...",
@@ -132,7 +124,6 @@ REQUEST_INTERVAL_SECONDS = 0.5         # 两次请求之间的最小间隔
 MAX_RETRIES = 3                        # 单篇最多尝试次数（含首次）
 RETRY_BACKOFF_BASE = 2.0               # 重试退避基数（秒）
 MAX_CONSECUTIVE_FAILURES = 5           # 连续失败达到此数则停止整轮任务
-STATE_SAVE_EVERY = 20                  # 每处理 N 篇落一次状态（防中断丢进度）
 RANDOM_SEED = 20260101                 # --test 抽样用的固定随机种子
 
 # ---------------- 默认处理范围 ----------------

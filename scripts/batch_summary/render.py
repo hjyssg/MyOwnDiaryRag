@@ -70,7 +70,7 @@ def format_emotion_label(record: Dict) -> str:
 def render_sections(records: List[Dict]) -> List[str]:
     """年份小标题 + 每篇一行「日期 + 情绪标签 + 摘要」
 
-    ``render_markdown``（最终 ``日记总结.md``）与中途预览共用本函数，
+    ``render_markdown``（跑完后的最终版）与运行期预览共用本函数，
     两边正文永远逐行一致。
 
     有情绪：``- 0120【快乐】今天去公园散步……``
@@ -98,14 +98,9 @@ def render_sections(records: List[Dict]) -> List[str]:
 
 
 def render_markdown(records: List[Dict], title: str = DEFAULT_TITLE) -> str:
-    """生成最终 Markdown 文本"""
+    """生成最终版文本（跑完后用它重写「中途预览.md」）"""
     lines = [title.strip(), "", HEADER_NOTE, ""] + render_sections(records)
     return "\n".join(lines).rstrip() + "\n"
-
-
-def count_lines(markdown: str) -> int:
-    """摘要行数（不含标题/空行），用于控制台汇总"""
-    return sum(1 for line in markdown.splitlines() if line.startswith("- "))
 
 
 def summarize_years(records: List[Dict]) -> Dict[int, int]:
@@ -123,10 +118,9 @@ def summarize_years(records: List[Dict]) -> Dict[int, int]:
 
 PREVIEW_TITLE = "# 日记总结（中途预览）"
 
-_NOTE_RUNNING = "> 这是运行中的快照（每 {every} 秒自动更新）；完整结果以同目录的 日记总结.md 为准。"
-_NOTE_RUNNING_NO_EVERY = "> 这是运行中的快照；完整结果以同目录的 日记总结.md 为准。"
-_NOTE_INTERRUPTED = "> 任务已中断：这是中断时的快照，重跑同一命令即可续跑；完整结果以同目录的 日记总结.md 为准。"
-_NOTE_DONE = "> 任务已完成：完整结果以同目录的 日记总结.md 为准。"
+_NOTE_RUNNING = "> 这是运行中的快照（每 {every} 秒自动更新）；跑完后本文件会更新为完整结果。"
+_NOTE_RUNNING_NO_EVERY = "> 这是运行中的快照；跑完后本文件会更新为完整结果。"
+_NOTE_INTERRUPTED = "> 任务已中断：这是中断时的快照，重跑同一命令即可续跑。"
 _NOTE_EMPTY = "> 目前还没有摘要（已处理的日记都是空正文，或都还没返回）。"
 
 
@@ -142,7 +136,7 @@ def preview_header(
     """中途预览的头部（标题 + 两行引用说明），末尾带换行
 
     头部只讲"进度到哪了"，正文完全由 :func:`render_sections` 负责，
-    因此中途看到的目录与跑完后的 ``日记总结.md`` 逐行一致。
+    因此中途看到的目录与跑完后的最终版逐行一致。
     """
     stamp = (now or datetime.now()).strftime("%H:%M:%S")
     percent = (int(processed) / int(total) * 100) if int(total) > 0 else 0.0
@@ -155,8 +149,6 @@ def preview_header(
 
     if phase == "interrupted":
         note = _NOTE_INTERRUPTED
-    elif phase == "done":
-        note = _NOTE_DONE
     elif every:
         note = _NOTE_RUNNING.format(every=f"{float(every):g}")
     else:
@@ -184,47 +176,15 @@ def render_preview(
     every: Optional[float] = None,
     now=None,
 ) -> str:
-    """生成"中途预览"文本（运行期间由主程序节流刷新，可随时打开）"""
+    """生成「中途预览.md」文本
+
+    * ``phase="running" / "interrupted"``：进度头 + 正文（运行期间节流刷新）；
+    * ``phase="done"``：直接返回最终版（与 :func:`render_markdown` 逐字一致）。
+    """
+    if phase == "done":
+        return render_markdown(records)
     header = preview_header(
         processed=processed, total=total, current=current,
         phase=phase, every=every, now=now,
     )
     return compose_preview(header, render_sections(records))
-
-
-# ---------------- 待复核清单 ----------------
-
-PENDING_TITLE = "# 待复核：没有产出摘要的日记"
-
-
-def render_pending_markdown(items: List[Dict], title: str = PENDING_TITLE) -> str:
-    """渲染"待复核"清单（含原文全文，便于逐条人工确认为什么没有摘要）"""
-    failed = sum(1 for item in items if item.get("status") == "failed")
-    lines = [
-        title.strip(),
-        "",
-        f"- 条数：{len(items)}（其中处理失败 {failed} 条）",
-        "- 用途：这些日记没有产出摘要（调用失败，或模型给出了空答案）。"
-        "失败的条目在重跑同一命令时会自动重试；若反复失败，可调整 "
-        "`prompts/diary_summary_prompt.txt` 或 LLM 参数后重跑。",
-        "- 本文件由 `--all` / `--rebuild-md` 自动生成，不调用模型、不修改状态。",
-        "",
-    ]
-    for item in items:
-        status = item.get("status")
-        label = "处理失败" if status == "failed" else "空摘要"
-        if status == "failed" and item.get("error"):
-            label += f"（{item['error']}）"
-        lines += [
-            "---",
-            "",
-            f"## {item.get('entry_date')}｜{item.get('entry_type')}｜"
-            f"{item.get('word_count')}字｜entry_id={item.get('entry_id')}",
-            "",
-            f"**{label}**",
-            "",
-            (item.get("content") or "").strip() or "（空正文）",
-            "",
-        ]
-    return "\n".join(lines).rstrip() + "\n"
-

@@ -40,7 +40,3 @@ class DiaryReader:
             years=list(years) if years else None,
             entry_types=list(entry_types) if entry_types else None,
         )
-
-    def entry(self, entry_id) -> Optional[dict]:
-        """按 id 取单篇日记全文（供"待复核"导出用；只读）"""
-        return self._db.entry(int(entry_id))

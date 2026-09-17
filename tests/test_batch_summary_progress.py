@@ -3,7 +3,7 @@
 """日记总结 - 实时进度（心跳 / 状态块 / 运行目录）测试
 
 覆盖用户要求：程序自己持续打印人类可读进度、阶段中文名、覆盖天数、
-日志变成"最近日志"、心跳线程可干净退出、status.py 复用同一格式。
+日志变成"最近日志"、心跳线程可干净退出；**进度只打印，不落盘**。
 
 运行：
 
@@ -29,8 +29,12 @@ from scripts.batch_summary import config as bs_config  # noqa: E402
 from scripts.batch_summary import main as bs_main  # noqa: E402
 from scripts.batch_summary import progress as progress_mod  # noqa: E402
 from scripts.batch_summary import state as state_mod  # noqa: E402
-from scripts.batch_summary import status as status_mod  # noqa: E402
 from scripts.batch_summary.llm import LLMError  # noqa: E402
+
+TESTS_DIR = Path(__file__).resolve().parent
+if str(TESTS_DIR) not in sys.path:
+    sys.path.insert(0, str(TESTS_DIR))
+from summary_test_support import make_store  # noqa: E402
 
 TEMPLATE = "日期：{DATE}\n{CONTENT}"
 NOW = datetime(2026, 9, 16, 10, 12, 0)
@@ -70,7 +74,7 @@ def make_snapshot(**overrides):
 
 
 class FormatTests(unittest.TestCase):
-    """状态块渲染（主程序心跳与 status.py 共用）"""
+    """状态块渲染（控制台心跳）"""
 
     def test_phase_labels_are_chinese(self):
         self.assertEqual(progress_mod.phase_label("loading"), "读取日记")
@@ -109,11 +113,7 @@ class ReporterTests(unittest.TestCase):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def make_reporter(self, **overrides):
-        kwargs = dict(
-            scope="2025 年", interval=0.05, stream=self.stream, enabled=True,
-            progress_file=self.tmp / "progress.json",
-            status_file=self.tmp / "运行状态.txt",
-        )
+        kwargs = dict(scope="2025 年", interval=0.05, stream=self.stream, enabled=True)
         kwargs.update(overrides)
         return progress_mod.ProgressReporter(**kwargs)
 
@@ -132,20 +132,6 @@ class ReporterTests(unittest.TestCase):
         after_stop = len(self.stream.getvalue())
         time.sleep(0.2)
         self.assertEqual(len(self.stream.getvalue()), after_stop)      # 停止后不再打印
-
-    def test_progress_files_written_on_update(self):
-        reporter = self.make_reporter(enabled=False)      # --quiet 时文件仍要写
-        reporter.set_total(2, days_total=2)
-        reporter.update(1, stats={"ok": 1, "empty": 0, "failed": 0, "skipped": 0, "summaries": 3},
-                        current={"id": 1, "date": "2025-01-01",
-                                 "entry_type": "multi_day", "word_count": 10})
-        snapshot = json.loads((self.tmp / "progress.json").read_text(encoding="utf-8"))
-        self.assertEqual((snapshot["total"], snapshot["index"]), (2, 1))
-        self.assertEqual(snapshot["ok"], 1)
-        self.assertEqual(snapshot["days_done"], 1)
-        status_text = (self.tmp / "运行状态.txt").read_text(encoding="utf-8")
-        self.assertIn("已处理：1 / 2 篇", status_text)
-        self.assertFalse((self.tmp / "progress.json.tmp").exists())
 
     def test_days_counted_by_distinct_dates(self):
         reporter = self.make_reporter(enabled=False)
@@ -223,57 +209,48 @@ class ProcessEntriesReporterTests(unittest.TestCase):
         self.stream = io.StringIO()
         self.reporter = progress_mod.ProgressReporter(
             scope="2015 年", interval=3600, stream=self.stream, enabled=True,
-            progress_file=self.tmp / "progress.json",
-            status_file=self.tmp / "运行状态.txt",
         )
+        self.store, self.fingerprint = make_store(self.tmp)
 
     def tearDown(self):
         self.reporter.stop()
         shutil.rmtree(self.tmp, ignore_errors=True)
 
-    def test_snapshot_and_status_file_after_processing(self):
+    def _run(self, entries, client):
+        return bs_main.process_entries(
+            entries, client, bs_main.SummaryView(), TEMPLATE, "p1",
+            quiet=False, reporter=self.reporter, store=self.store,
+            algorithm_fingerprint_value=self.fingerprint,
+        )
+
+    def test_snapshot_after_processing(self):
         entries = [
             make_entry(id=1, date="2015-01-20"),
             make_entry(id=2, date="2015-01-21", content="今天很普通。"),
         ]
-        summary_state = state_mod.SummaryState(path=self.tmp / "state.json", prompt_sha1="p")
-        stats = bs_main.process_entries(
-            entries,
-            FakeClient({1: SUMMARY_TEXT, 2: "无"}),
-            summary_state, TEMPLATE, "p",
-            quiet=False, reporter=self.reporter,
-        )
+        stats = self._run(entries, FakeClient({1: SUMMARY_TEXT, 2: "无"}))
         self.assertEqual((stats["ok"], stats["empty"], stats["failed"]), (1, 1, 0))
 
-        snapshot = json.loads((self.tmp / "progress.json").read_text(encoding="utf-8"))
+        snapshot = self.reporter.snapshot()
         self.assertEqual(snapshot["phase"], "done")
         self.assertEqual((snapshot["total"], snapshot["index"]), (2, 2))
         self.assertEqual(snapshot["days_done"], 2)
         self.assertEqual(snapshot["scope"], "2015 年")
         self.assertIsNone(snapshot["current_entry"])
         self.assertIn("处理结束", snapshot["last_log"])
-
-        status_text = (self.tmp / "运行状态.txt").read_text(encoding="utf-8")
-        self.assertIn("2015 年日记批量总结任务已完成 ✅", status_text)
-        self.assertIn("覆盖 2 天", status_text)
+        self.assertIn("2015 年日记批量总结任务已完成 ✅", self.reporter.text())
         # 逐篇一行输出仍在（与心跳同锁，不会互相插行）
         self.assertIn("[1/2] 2015-01-20", self.stream.getvalue())
         self.assertIn("调用模型", self.stream.getvalue())
 
-    def test_skip_records_are_counted_in_days(self):
+    def test_cached_entry_is_skipped_without_model_call(self):
+        """断点续跑：第二次处理同一篇只读 SQLite，不再调用模型"""
         entry = make_entry(id=1, date="2015-01-20")
-        summary_state = state_mod.SummaryState(path=self.tmp / "state.json", prompt_sha1="p")
-        summary_state.put(1, {
-            "status": "ok", "content_hash": state_mod.content_hash(entry["content"]),
-            "prompt_sha1": "p", "summary": SUMMARY_TEXT,
-            "entry_date": entry["date"], "entry_id": 1,
-        })
+        self._run([entry], FakeClient())
         client = FakeClient()
-        stats = bs_main.process_entries(
-            [entry], client, summary_state, TEMPLATE, "p", reporter=self.reporter,
-        )
+        stats = self._run([entry], client)
+        self.assertEqual(client.call_count, 0)
         self.assertEqual(stats["skipped"], 1)
-        self.assertEqual(client.call_count, 0)                      # 跳过不调用模型
         self.assertEqual(self.reporter.snapshot()["days_done"], 1)
 
     def test_failed_entry_is_reported(self):
@@ -282,11 +259,7 @@ class ProcessEntriesReporterTests(unittest.TestCase):
                 self.call_count += 1
                 raise LLMError("模拟失败")
 
-        summary_state = state_mod.SummaryState(path=self.tmp / "state.json", prompt_sha1="p")
-        stats = bs_main.process_entries(
-            [make_entry(id=1)], BoomClient(), summary_state, TEMPLATE, "p",
-            reporter=self.reporter,
-        )
+        stats = self._run([make_entry(id=1)], BoomClient())
         self.assertEqual(stats["failed"], 1)
         snapshot = self.reporter.snapshot()
         self.assertEqual(snapshot["failed"], 1)
@@ -320,23 +293,19 @@ class RunDirTests(unittest.TestCase):
         names = [d.name for d in bs_config.list_run_dirs(self.tmp)]
         self.assertEqual(names, ["260917090000", "260916204500", "260916101830"])
 
-    def test_resolve_paths_splits_state_and_results(self):
+    def test_resolve_paths_keeps_one_artifact_in_run_dir(self):
         args = type("A", (), {"output_dir": str(self.tmp), "flat_output": False})()
         paths = bs_main.resolve_paths(args)
-        self.assertEqual(
-            paths["state"].resolve(),
-            (self.tmp / "summary_state.json").resolve(),
-        )  # 断点跨运行共享
+        self.assertEqual(sorted(paths), ["base_dir", "dir", "preview"])   # 只有这一个产物
         self.assertNotEqual(paths["dir"], self.tmp)                        # 产物进时间戳子目录
-        self.assertEqual(paths["markdown"].parent, paths["dir"])
-        self.assertEqual(paths["status"].parent, paths["dir"])
-        self.assertTrue(paths["status"].name.endswith(".txt"))
+        self.assertEqual(paths["preview"].parent, paths["dir"])
+        self.assertEqual(paths["preview"].name, bs_config.PREVIEW_FILE_NAME)
 
         flat = bs_main.resolve_paths(args, timestamped=False)
         self.assertEqual(flat["dir"].resolve(), self.tmp.resolve())
         self.assertEqual(
-            flat["markdown"].resolve(),
-            (self.tmp / "日记总结.md").resolve(),
+            flat["preview"].resolve(),
+            (self.tmp / bs_config.PREVIEW_FILE_NAME).resolve(),
         )
 
     def test_scope_label_and_heartbeat_interval(self):
@@ -357,49 +326,6 @@ class RunDirTests(unittest.TestCase):
             bs_main.heartbeat_interval(tiny, {"heartbeat_seconds": 0.1}),
             float(bs_config.HEARTBEAT_MIN_SECONDS),
         )
-
-
-class StatusFileTests(unittest.TestCase):
-    """status.py：自动找最近一次运行 + 复用状态块格式"""
-
-    def setUp(self):
-        self.tmp = Path(tempfile.mkdtemp())
-
-    def tearDown(self):
-        shutil.rmtree(self.tmp, ignore_errors=True)
-
-    def test_find_run_dir_prefers_latest_with_progress(self):
-        old = bs_config.new_run_dir(self.tmp, now=datetime(2026, 9, 16, 10, 0, 0))
-        new = bs_config.new_run_dir(self.tmp, now=datetime(2026, 9, 16, 11, 0, 0))
-        (old / "progress.json").write_text("{}", encoding="utf-8")
-        self.assertEqual(status_mod.find_run_dir(self.tmp), old)   # 更新的没快照 -> 用有快照的
-        (new / "progress.json").write_text("{}", encoding="utf-8")
-        self.assertEqual(status_mod.find_run_dir(self.tmp), new)
-
-    def test_render_report_uses_progress_format(self):
-        run_dir = bs_config.new_run_dir(self.tmp, now=datetime(2026, 9, 16, 10, 0, 0))
-        (run_dir / "progress.json").write_text(
-            json.dumps(make_snapshot(phase="done", wait_seconds=None), ensure_ascii=False),
-            encoding="utf-8",
-        )
-        (run_dir / bs_config.STATUS_FILE_NAME).write_text("x", encoding="utf-8")
-        report = status_mod.render_report(run_dir, base_dir=self.tmp)
-        self.assertIn("2025 年日记批量总结任务已完成 ✅", report)
-        self.assertIn("已处理：140 / 328 篇", report)
-        self.assertIn("运行目录  :", report)
-        self.assertIn("状态文件  :", report)
-
-    def test_render_report_falls_back_without_progress(self):
-        report = status_mod.render_report(self.tmp, base_dir=self.tmp)
-        self.assertIn("还没有 progress.json", report)
-        self.assertIn("python scripts/batch_summary/main.py --all", report)
-
-    def test_format_run_list(self):
-        bs_config.new_run_dir(self.tmp, now=datetime(2026, 9, 16, 10, 0, 0))
-        text = status_mod.format_run_list(self.tmp)
-        self.assertIn("260916100000", text)
-        self.assertIn("历史运行目录", text)
-        self.assertIn("还没有带时间戳的运行目录", status_mod.format_run_list(self.tmp / "nope"))
 
 
 if __name__ == "__main__":

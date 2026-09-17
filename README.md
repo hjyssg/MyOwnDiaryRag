@@ -10,7 +10,7 @@
 | 模块 | 能做什么 | 详细文档 |
 |------|----------|----------|
 | **核心**（项目根目录） | 日记导入、SQLite FTS5 全文检索、年度字数统计、数据库结构 | 本文件 |
-| **日记批量总结** | 用本地 LM Studio 模型为**每一篇**日记写摘要，生成按年份排列的《日记总结.md》 | [`scripts/batch_summary/README.md`](scripts/batch_summary/README.md) |
+| **日记批量总结** | 用本地 LM Studio 模型为**每一篇**日记写摘要，生成按年份排列的《中途预览.md》（跑完即最终版） | [`scripts/batch_summary/README.md`](scripts/batch_summary/README.md) |
 | **Web 浏览系统** | React + TypeScript 前端与 FastAPI 只读 API：浏览 / 搜索 / 摘要 / 回顾 | [`webapp/README.md`](webapp/README.md) |
 
 ## 功能特性
@@ -101,7 +101,7 @@ python scripts/yearly_stats.py
 
 用本地 LM Studio 模型逐篇阅读数据库中的日记，为**每一篇**写一段摘要（不做"重要/不重要"的筛选），
 再额外判断一次**情绪标签**（默认 8 类：快乐/平淡/悲伤/生气/焦虑/疲惫/期待/其他），
-生成按年份排列的 `日记总结.md`，每行形如 `- 0120【快乐】今天去公园散步……`，
+生成按年份排列的 `中途预览.md`（运行期=实时快照，跑完=最终版），每行形如 `- 0120【快乐】今天去公园散步……`，
 并将摘要与情绪逐篇提交到同一个 SQLite 数据库供 Web 查询与筛选。
 
 ```bash
