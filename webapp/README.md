@@ -38,12 +38,17 @@ Vite 将 `/api` 转发到 `127.0.0.1:8000`。筛选状态均保存在 URL query 
 - `GET /api/entries/{id}`
 - `GET /api/on-this-day?month=&day=`
 - `GET /api/random`
-- `GET /api/summaries?year=&month=&entry_type=&q=&status=&page=&per_page=`
+- `GET /api/summaries?year=&month=&entry_type=&emotion=&q=&status=&page=&per_page=`
+- `GET /api/summaries/emotions`：情绪标签全集 + 各自条数（供筛选下拉；标签集来自根 `.env`）
 - `GET /api/entries/{id}/summary`
 - `GET /api/search?q=`：兼容接口，已弃用
 
 摘要表尚未由 batch 创建时，摘要列表返回空分页，单篇摘要返回 `status=missing`，不会影响原文阅读。
 正文变化后旧摘要返回 `status=stale` 且不返回旧摘要正文。
+
+情绪字段：`emotion`（标签，空字符串表示没有）与 `emotion_status`
+（`ok` / `empty` / `failed` / `stale` / `missing`）。标签集来自根 `.env` 的 `EMOTION_LABELS`，
+非法 `emotion` 参数返回 422；未迁移的老库里这两个字段降级为 `""` / `missing`。
 
 ## 验证
 

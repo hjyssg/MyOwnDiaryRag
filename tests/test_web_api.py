@@ -13,6 +13,16 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from database import Database
+from scripts.batch_summary import config as bs_config
+from summary_database import SummaryStore
+from summary_fingerprint import (
+    algorithm_fingerprint,
+    algorithm_payload,
+    cache_key,
+    emotion_payload,
+    entry_key,
+    source_hash,
+)
 from webapp.app import app
 from webapp.dependencies import get_database
 
@@ -59,7 +69,7 @@ def create_database(path: Path, entries=ENTRIES) -> None:
 
 class WebApiTests(unittest.TestCase):
     def setUp(self):
-        self.temp_dir = tempfile.TemporaryDirectory()
+        self.temp_dir = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.db_path = Path(self.temp_dir.name) / "diary.db"
         create_database(self.db_path)
         self.database = Database(self.db_path)
@@ -227,9 +237,99 @@ class WebApiTests(unittest.TestCase):
         self.assertEqual(response.json(), {"detail": "接口不存在"})
 
 
+class SummaryEmotionApiTests(unittest.TestCase):
+    """摘要 API 的情绪筛选（标签集来自根 .env 的 EMOTION_LABELS）"""
+
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+        self.db_path = Path(self.temp_dir.name) / "diary.db"
+        create_database(self.db_path)
+        store = SummaryStore(self.db_path)
+        store.migrate()
+        settings = {"llm_temperature": .2, "llm_max_tokens": 10, "llm_reasoning_effort": "",
+                    "llm_json_mode": False, "content_head_chars": 10, "content_tail_chars": 5,
+                    "max_summary_chars": 60, "emotion_labels": list(bs_config.EMOTION_LABELS),
+                    "emotion_fallback": bs_config.EMOTION_FALLBACK,
+                    "emotion_label_version": bs_config.EMOTION_LABEL_VERSION,
+                    "emotion_temperature": 0.0, "emotion_max_tokens": 32}
+        payload = algorithm_payload(settings, "model", "prompt")
+        self.fingerprint = algorithm_fingerprint(payload)
+        store.register_algorithm(self.fingerprint, payload)
+        emotion_alg = emotion_payload(settings, "model", "情绪 prompt")
+        self.emotion_fingerprint = algorithm_fingerprint(emotion_alg)
+        store.register_algorithm(self.emotion_fingerprint, emotion_alg)
+
+        date, entry_type, summary = "2024-09-17", "single_day", "旅行与朋友聚会"
+        key = entry_key({"date": date, "entry_type": entry_type})
+        digest = source_hash("旅行与朋友聚会")
+        store.upsert({"date": date, "year": 2024, "month": 9, "day": 17, "entry_type": entry_type,
+                      "word_count": 8}, entry_key=key, source_hash_value=digest,
+                     algorithm_fingerprint=self.fingerprint,
+                     cache_key=cache_key(key, digest, self.fingerprint),
+                     status="ok", summary=summary)
+        store.upsert_emotion(key, emotion="生气", status="ok", cache_key="emotion-cache-1",
+                             algorithm_fingerprint=self.emotion_fingerprint)
+
+        other_date, other_type = "2024-09-18", "single_day"
+        other_key = entry_key({"date": other_date, "entry_type": other_type})
+        other_digest = source_hash("工作记录")
+        store.upsert({"date": other_date, "year": 2024, "month": 9, "day": 18,
+                      "entry_type": other_type, "word_count": 4},
+                     entry_key=other_key, source_hash_value=other_digest,
+                     algorithm_fingerprint=self.fingerprint,
+                     cache_key=cache_key(other_key, other_digest, self.fingerprint),
+                     status="ok", summary="工作记录")     # 这一篇没有情绪（老库形态）
+
+        app.dependency_overrides[get_database] = lambda: Database(self.db_path)
+        self.client = TestClient(app, raise_server_exceptions=False)
+
+    def tearDown(self):
+        app.dependency_overrides.clear()
+        self.client.close()
+        self.temp_dir.cleanup()
+
+    def test_summary_items_expose_emotion_and_status(self):
+        body = self.client.get("/api/summaries", params={"status": "all"}).json()
+        items = {item["entry_date"]: item for item in body["items"]}
+        self.assertEqual(items["2024-09-17"]["emotion"], "生气")
+        self.assertEqual(items["2024-09-17"]["emotion_status"], "ok")
+        self.assertEqual(items["2024-09-18"]["emotion"], "")
+        self.assertEqual(items["2024-09-18"]["emotion_status"], "missing")
+
+    def test_emotion_filter_narrows_the_list(self):
+        matched = self.client.get("/api/summaries", params={"status": "all", "emotion": "生气"}).json()
+        self.assertEqual(matched["total"], 1)
+        self.assertEqual(matched["items"][0]["entry_date"], "2024-09-17")
+        empty = self.client.get("/api/summaries", params={"status": "all", "emotion": "悲伤"}).json()
+        self.assertEqual((empty["total"], empty["items"]), (0, []))
+
+    def test_unknown_emotion_is_rejected(self):
+        response = self.client.get("/api/summaries", params={"emotion": "暴躁"})
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(response.json(), {"detail": "emotion 取值不合法：暴躁"})
+
+    def test_blank_emotion_means_no_filter(self):
+        """?emotion= 不该被当成"只看没有情绪的"，应与不传时一致"""
+        with_blank = self.client.get("/api/summaries", params={"status": "all", "emotion": "  "}).json()
+        without = self.client.get("/api/summaries", params={"status": "all"}).json()
+        self.assertEqual(with_blank["total"], without["total"])
+
+    def test_emotion_labels_endpoint_lists_full_label_set_with_counts(self):
+        body = self.client.get("/api/summaries/emotions").json()
+        labels = [item["emotion"] for item in body["items"]]
+        self.assertEqual(labels, list(bs_config.EMOTION_LABELS))
+        counts = {item["emotion"]: item["count"] for item in body["items"]}
+        self.assertEqual(counts["生气"], 1)
+        self.assertEqual(counts[bs_config.EMOTION_FALLBACK], 0)
+
+    def test_entry_summary_carries_emotion(self):
+        body = self.client.get("/api/entries/3/summary").json()
+        self.assertEqual((body["emotion"], body["emotion_status"]), ("生气", "ok"))
+
+
 class EmptyDatabaseApiTests(unittest.TestCase):
     def test_random_returns_404_for_empty_database(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
             db_path = Path(temp_dir) / "empty.db"
             create_database(db_path, entries=[])
             app.dependency_overrides[get_database] = lambda: Database(db_path)

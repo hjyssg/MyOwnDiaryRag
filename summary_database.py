@@ -11,7 +11,7 @@ from typing import Iterable, Optional
 from summary_fingerprint import canonical_json, source_hash
 
 MIGRATIONS_DIR = Path(__file__).parent / "migrations" / "summaries"
-LATEST_SCHEMA_VERSION = 1
+LATEST_SCHEMA_VERSION = 2
 
 
 def now_iso() -> str:
@@ -102,11 +102,49 @@ class SummaryStore:
                  summary, error, generated_at, stamp),
             )
 
-    def start_run(self, fingerprint: str, scope: dict, total: int) -> int:
+    # -- 情绪分类（与摘要共享同一行，但缓存/指纹彼此独立）--
+
+    def emotion_record(self, key: str) -> Optional[dict]:
+        """读取某篇的情绪缓存状态（行不存在时返回 None）"""
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT emotion, emotion_status, emotion_cache_key, emotion_algorithm_fingerprint "
+                "FROM entry_summaries WHERE entry_key = ?", (key,)
+            ).fetchone()
+            return dict(row) if row else None
+
+    def emotion_cache_hit(self, key: str, current_cache_key: str) -> bool:
+        """情绪是否可复用（与摘要同口径：ok/empty 且缓存键一致）"""
+        record = self.emotion_record(key)
+        return bool(
+            record
+            and record.get("emotion_cache_key") == current_cache_key
+            and record.get("emotion_status") in ("ok", "empty")
+        )
+
+    def upsert_emotion(self, key: str, *, emotion: str, status: str, cache_key: str,
+                       algorithm_fingerprint: str, error: Optional[str] = None) -> bool:
+        """只更新某篇的情绪列（摘要列保持不动）；行不存在时返回 False 且不改库
+
+        情绪与摘要解耦：补情绪 / 换情绪标签与 prompt 都不会让已产出的摘要失效。
+        """
+        with self.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            cursor = connection.execute(
+                "UPDATE entry_summaries SET emotion=?, emotion_status=?, emotion_cache_key=?, "
+                "emotion_algorithm_fingerprint=?, emotion_error=?, updated_at=? WHERE entry_key=?",
+                (emotion, status, cache_key, algorithm_fingerprint,
+                 (error or "")[:500] or None, now_iso(), key),
+            )
+            return cursor.rowcount > 0
+
+    def start_run(self, fingerprint: str, scope: dict, total: int,
+                  *, emotion_fingerprint: Optional[str] = None) -> int:
         with self.connect() as connection:
             cursor = connection.execute(
-                "INSERT INTO summary_runs(algorithm_fingerprint, scope_json, status, total, started_at) "
-                "VALUES (?, ?, 'running', ?, ?)", (fingerprint, canonical_json(scope), total, now_iso())
+                "INSERT INTO summary_runs(algorithm_fingerprint, emotion_algorithm_fingerprint, "
+                "scope_json, status, total, started_at) VALUES (?, ?, ?, 'running', ?, ?)",
+                (fingerprint, emotion_fingerprint, canonical_json(scope), total, now_iso())
             )
             return int(cursor.lastrowid)
 
@@ -161,12 +199,14 @@ class SummaryRepository:
         except sqlite3.DatabaseError:
             return False
 
-    def list(self, *, year=None, month=None, entry_type=None, query=None, status="ok", page=1, per_page=20):
+    def list(self, *, year=None, month=None, entry_type=None, query=None, emotion=None,
+             status="ok", page=1, per_page=20):
         with self.connect() as connection:
             if not tables_exist(connection):
                 return [], 0
             clauses, params = [], []
-            for column, value in (("e.year", year), ("e.month", month), ("e.entry_type", entry_type), ("s.status", status)):
+            for column, value in (("e.year", year), ("e.month", month), ("e.entry_type", entry_type),
+                                  ("s.status", status), ("s.emotion", emotion)):
                 if value is not None and value != "all": clauses.append(f"{column} = ?"); params.append(value)
             if query:
                 clauses.append("s.summary LIKE ?"); params.append(f"%{query}%")
@@ -179,20 +219,39 @@ class SummaryRepository:
             ).fetchall()
             return [self._public(dict(row), connection) for row in rows], total
 
+    def emotion_counts(self) -> dict:
+        """各情绪标签的条数（只统计有效摘要；供 Web 下拉显示计数）
+
+        迁移前的旧库（还没有 emotion 列）返回空字典，不影响原文阅读。
+        """
+        with self.connect() as connection:
+            if not tables_exist(connection):
+                return {}
+            try:
+                rows = connection.execute(
+                    "SELECT emotion, COUNT(*) AS count FROM entry_summaries "
+                    "WHERE status = 'ok' AND emotion != '' GROUP BY emotion"
+                ).fetchall()
+            except sqlite3.OperationalError:
+                return {}
+            return {row["emotion"]: int(row["count"]) for row in rows}
+
     def for_entry(self, entry_id: int) -> Optional[dict]:
         with self.connect() as connection:
             entry = connection.execute("SELECT * FROM diary_entries WHERE id=?", (entry_id,)).fetchone()
             if not entry:
                 return None
             if not tables_exist(connection):
-                return {"entry_key": None, "status": "missing", "summary": "", "model": None, "generated_at": None}
+                return {"entry_key": None, "status": "missing", "summary": "", "model": None,
+                        "generated_at": None, "emotion": "", "emotion_status": "missing"}
             row = connection.execute(
                 "SELECT s.*, e.id entry_id, e.content, a.model FROM diary_entries e "
                 "LEFT JOIN entry_summaries s ON s.entry_date=e.date AND s.entry_type=e.entry_type "
                 "LEFT JOIN summary_algorithms a ON a.fingerprint=s.algorithm_fingerprint WHERE e.id=?", (entry_id,)
             ).fetchone()
             if not row or row["entry_key"] is None:
-                return {"entry_key": None, "status": "missing", "summary": "", "model": None, "generated_at": None}
+                return {"entry_key": None, "status": "missing", "summary": "", "model": None,
+                        "generated_at": None, "emotion": "", "emotion_status": "missing"}
             return self._public(dict(row), connection)
 
     @staticmethod
@@ -204,6 +263,11 @@ class SummaryRepository:
         )
 
     def _algorithm_stale(self, connection: sqlite3.Connection, row: dict) -> bool:
+        """摘要是否需要重算（本轮 scope 的摘要算法与记录不一致）
+
+        ``--emotion-only`` 的运行**不产出摘要**，因此不能用来判断摘要是否过期
+        （否则用户改过摘要 Prompt 后补一次情绪，就会把好摘要全标成 stale）。
+        """
         runs = connection.execute(
             "SELECT algorithm_fingerprint, scope_json FROM summary_runs "
             "WHERE status IN ('running','completed') ORDER BY id DESC"
@@ -213,8 +277,30 @@ class SummaryRepository:
                 scope = json.loads(run["scope_json"])
             except (TypeError, ValueError):
                 continue
+            if isinstance(scope, dict) and scope.get("emotion_only"):
+                continue
             if self._scope_matches(scope, row):
                 return run["algorithm_fingerprint"] != row.get("algorithm_fingerprint")
+        return False
+
+    def _emotion_stale(self, connection: sqlite3.Connection, row: dict) -> bool:
+        """记录上的情绪算法指纹与最近一次覆盖该 scope 的运行不一致（情绪需要重算）"""
+        if not row.get("emotion_algorithm_fingerprint"):
+            return False
+        runs = connection.execute(
+            "SELECT emotion_algorithm_fingerprint, scope_json FROM summary_runs "
+            "WHERE status IN ('running','completed') ORDER BY id DESC"
+        ).fetchall()
+        for run in runs:
+            fingerprint = run["emotion_algorithm_fingerprint"]
+            if not fingerprint:
+                continue
+            try:
+                scope = json.loads(run["scope_json"])
+            except (TypeError, ValueError):
+                continue
+            if self._scope_matches(scope, row):
+                return fingerprint != row.get("emotion_algorithm_fingerprint")
         return False
 
     def _public(self, row: dict, connection: Optional[sqlite3.Connection] = None) -> dict:
@@ -222,9 +308,21 @@ class SummaryRepository:
         if connection is not None and not stale:
             stale = self._algorithm_stale(connection, row)
         status = "stale" if stale else row.get("status")
+        emotion = row.get("emotion") or ""
+        emotion_status = row.get("emotion_status") or "missing"
+        if emotion_status != "missing":
+            if stale or (connection is not None and self._emotion_stale(connection, row)):
+                emotion_status = "stale"
+        if emotion_status != "ok":
+            emotion = ""
         return {k: row.get(k) for k in (
             "entry_key", "entry_id", "entry_date", "entry_type", "word_count", "summary", "model", "generated_at"
-        )} | {"status": status, "summary": "" if stale or status == "failed" else row.get("summary", "")}
+        )} | {
+            "status": status,
+            "summary": "" if stale or status == "failed" else row.get("summary", ""),
+            "emotion": emotion,
+            "emotion_status": emotion_status,
+        }
 
     def all_records(self) -> list[dict]:
         items, _ = self.list(status="all", page=1, per_page=1_000_000)

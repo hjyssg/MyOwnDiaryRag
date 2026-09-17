@@ -50,6 +50,7 @@ if str(ROOT_DIR) not in sys.path:
 from scripts.batch_summary import config as bs_config  # noqa: E402
 from scripts.batch_summary import (  # noqa: E402
     dal,
+    emotion as emotion_mod,
     progress as progress_mod,
     render,
     state as state_mod,
@@ -66,6 +67,7 @@ from summary_fingerprint import (  # noqa: E402
     algorithm_fingerprint,
     algorithm_payload,
     cache_key as make_cache_key,
+    emotion_payload,
     entry_key as make_entry_key,
     source_hash,
 )
@@ -114,6 +116,21 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--include-stock", action="store_true", help="把 stock_diary（620 条日常炒股流水）也纳入总结")
     parser.add_argument("--limit", type=int, help="最多处理多少条（调试用）")
     parser.add_argument("--force", action="store_true", help="忽略断点状态，全部重新总结")
+    parser.add_argument(
+        "--no-emotion",
+        action="store_true",
+        help="不做情绪判断（只写摘要；等价于 .env 里 EMOTION_ENABLED=0）",
+    )
+    parser.add_argument(
+        "--emotion-only",
+        action="store_true",
+        help="只补情绪：摘要一律复用已有结果，只为缺情绪/情绪过期的篇目各发一次调用",
+    )
+    parser.add_argument(
+        "--force-emotion",
+        action="store_true",
+        help="忽略情绪缓存，重新判断情绪（摘要仍按原有缓存规则）",
+    )
     parser.add_argument(
         "--output-dir",
         help="输出根目录（默认 scripts/batch_summary/output）；产物放在其下的 YYMMDDHHMMSS 子目录里",
@@ -350,6 +367,57 @@ def load_template():
     return template, summary.prompt_sha1(template)
 
 
+def client_fingerprint_settings(settings, client) -> Dict:
+    """把"实际使用的客户端参数"并入配置
+
+    算法指纹要记录**真正发出去的参数**（可能被 --model / --reasoning-effort 覆盖过），
+    而不是 .env 里原本的意图值。
+    """
+    merged = dict(settings)
+    merged.update({
+        "llm_temperature": client.temperature,
+        "llm_max_tokens": client.max_tokens,
+        "llm_json_mode": client.json_mode,
+        "llm_reasoning_effort": client.reasoning_effort,
+    })
+    return merged
+
+
+def load_emotion_template() -> str:
+    """读取情绪 Prompt 模板（文件缺失/占位符不全时返回空串 → 情绪环节自动关闭）"""
+    try:
+        return emotion_mod.load_prompt_template()
+    except (FileNotFoundError, ValueError) as exc:
+        logger.warning("情绪 Prompt 不可用，本次关闭情绪判断：%s", exc)
+        return ""
+
+
+def setup_emotion(args, settings, client, model, fingerprint_settings, store=None):
+    """准备情绪判断器，返回 ``(classifier, fingerprint)``
+
+    * ``enabled=False``（``--no-emotion`` / ``EMOTION_ENABLED=0`` / Prompt 文件缺失）时，
+      主流程完全不做情绪判断；
+    * 情绪算法指纹与摘要指纹彼此独立：它只影响情绪缓存，不会让已有摘要失效；
+    * 传了 ``store`` 才把情绪算法登记进 ``summary_algorithms``（审计用）。
+    """
+    template = "" if getattr(args, "no_emotion", False) else load_emotion_template()
+    enabled = bool(template) and (
+        bool(settings.get("emotion_enabled", True)) or bool(getattr(args, "emotion_only", False))
+    )
+    fingerprint = ""
+    if enabled:
+        payload = emotion_payload(fingerprint_settings, model, template)
+        fingerprint = algorithm_fingerprint(payload)
+        if store is not None:
+            store.register_algorithm(fingerprint, payload)
+    classifier = emotion_mod.EmotionClassifier(
+        client, template, fingerprint=fingerprint,
+        labels=settings.get("emotion_labels"), fallback=settings.get("emotion_fallback"),
+        max_tokens=settings.get("emotion_max_tokens"), enabled=enabled,
+    )
+    return classifier, fingerprint
+
+
 # ---------------- 进度快照（实现见 progress.py，主程序与 status.py 共用） ----------------
 
 #: 进度快照（`progress.json` 与状态块共用同一份数据）
@@ -483,10 +551,19 @@ def process_entries(
     store: Optional[SummaryStore] = None,
     algorithm_fingerprint_value: str = "",
     run_id: Optional[int] = None,
+    emotion_classifier: Optional["emotion_mod.EmotionClassifier"] = None,
+    emotion_only: bool = False,
+    force_emotion: bool = False,
 ) -> Dict:
     """逐篇调用模型写摘要并写入状态；已处理且内容未变的条目不再调用模型
 
     单篇失败只记录并继续（连续失败达到阈值才停止），Ctrl+C 由调用方处理。
+
+    摘要与情绪是**两条独立的缓存通道**（需要 ``store`` 才会启用情绪）：
+
+    * 摘要命中且情绪也在：本篇不调用模型，计入 ``skipped``；
+    * 摘要命中但情绪缺失/过期：只发一次情绪调用（``--emotion-only`` 就是这种模式）；
+    * ``--force-emotion``：忽略情绪缓存重算（摘要仍按原有缓存规则）。
 
     进度输出：
 
@@ -499,9 +576,11 @@ def process_entries(
 
     ``status`` 口径：``ok`` = 产出摘要；``empty`` = 空正文或模型给出空答案；
     ``failed`` = 调用失败。此口径与统计数字、状态文件保持一致。
+    情绪同理：``emotions`` = 有标签；``emotion_empty`` = 空正文；``emotion_failed`` = 调用失败。
     """
     total = len(entries)
-    stats = {"total": total, "ok": 0, "empty": 0, "failed": 0, "skipped": 0, "summaries": 0}
+    stats = {"total": total, "ok": 0, "empty": 0, "failed": 0, "skipped": 0, "summaries": 0,
+             "emotions": 0, "emotion_empty": 0, "emotion_failed": 0, "emotion_skipped": 0}
     if reporter is not None:
         emit = reporter.emit                     # 与心跳共用锁，输出不会互相插行
         reporter.set_total(total)
@@ -552,15 +631,29 @@ def process_entries(
         stable_key = make_entry_key(entry)
         current_cache_key = make_cache_key(stable_key, digest, algorithm_fingerprint_value) if store else ""
         if store:
-            skip = not force and store.is_cache_hit(stable_key, current_cache_key)
-            reason = "done" if skip else "database-miss"
+            summary_skip = not force and store.is_cache_hit(stable_key, current_cache_key)
+            reason = "done" if summary_skip else "database-miss"
         else:
-            skip, reason = summary_state.should_skip(entry_id, digest, force=force)
-        if skip:
+            summary_skip, reason = summary_state.should_skip(entry_id, digest, force=force)
+
+        # -- 情绪：与摘要各自独立的缓存通道（摘要命中也要把缺的情绪补上）--
+        emotion_active = bool(store and emotion_classifier and emotion_classifier.enabled)
+        emotion_key = ""
+        do_emotion = False
+        if emotion_active:
+            emotion_key = emotion_classifier.cache_key(stable_key, digest)
+            do_emotion = force_emotion or not store.emotion_cache_hit(stable_key, emotion_key)
+        if emotion_only:
+            summary_skip = True        # --emotion-only：摘要一律复用，不重新生成
+            reason = "emotion-only"
+
+        if summary_skip and not do_emotion:
             stats["skipped"] += 1
             record = summary_state.get(entry_id) or {}
             if state_mod.has_summary(record):
                 stats["summaries"] += 1
+            if emotion_active:
+                stats["emotion_skipped"] += 1
             snapshot(
                 "running", index, entry,
                 note=f"跳过已处理：{entry.get('date')}（断点续跑，不调用模型）",
@@ -570,10 +663,18 @@ def process_entries(
 
         status, error, summary_text = "ok", None, ""
         entry_started = time.monotonic()
-        if not content.strip():
-            status = "empty"          # 空正文：不调用模型
-            entry_elapsed = 0.0
+        entry_elapsed = 0.0
+        summary_processed = not summary_skip     # 本篇的摘要状态由本次确定（含空正文）
+        summary_generated = False                # 是否真的调用了摘要模型
+        if not summary_skip and not content.strip():
+            status = "empty"                     # 空正文：不调用模型
+        elif summary_skip:
+            record = summary_state.get(entry_id) or {}
+            status = str(record.get("status") or "ok")
+            summary_text = str(record.get("summary") or "")
+            error = record.get("error")
         else:
+            summary_generated = True
             if not quiet:
                 emit(
                     f"[{index}/{total}] 处理中 {entry.get('date')} {entry.get('entry_type')} "
@@ -594,20 +695,21 @@ def process_entries(
                 status, error = "failed", f"{type(exc).__name__}: {exc}"
             entry_elapsed = time.monotonic() - entry_started
 
-        if status != "failed" and not summary_text.strip():
-            status = "empty"          # 空正文，或模型给出了空答案
+        if summary_generated and status != "failed" and not summary_text.strip():
+            status = "empty"          # 模型给出了空答案
 
-        if status == "failed":
-            consecutive_failures += 1
-            stats["failed"] += 1
-            logger.error("处理失败 entry_id=%s date=%s：%s", entry_id, entry.get("date"), error)
-        else:
-            consecutive_failures = 0
-            stats[status] += 1
-            if summary_text.strip():
-                stats["summaries"] += 1
+        if summary_processed:
+            if status == "failed":
+                consecutive_failures += 1
+                stats["failed"] += 1
+                logger.error("处理失败 entry_id=%s date=%s：%s", entry_id, entry.get("date"), error)
+            else:
+                consecutive_failures = 0
+                stats[status] += 1
+                if summary_text.strip():
+                    stats["summaries"] += 1
 
-        summary_state.put(entry_id, {
+        record = {
             "entry_id": entry_id,
             "entry_date": str(entry.get("date") or ""),
             "entry_type": entry.get("entry_type"),
@@ -618,8 +720,19 @@ def process_entries(
             "error": error,
             "processed_at": state_mod.now_iso(),
             "summary": summary_text,
-        })
-        if store:
+            "emotion": "",
+            "emotion_status": None,
+        }
+        record_tracked = True
+        if summary_skip:
+            previous = summary_state.get(entry_id)
+            if previous is not None:
+                record = previous             # 复用缓存：保留原记录（含已有情绪）
+            else:
+                record_tracked = False        # 无摘要记录：只在库里补情绪，不进内存视图
+        else:
+            summary_state.put(entry_id, record)
+        if store and not summary_skip:
             store.upsert(
                 entry, entry_key=stable_key, source_hash_value=digest,
                 algorithm_fingerprint=algorithm_fingerprint_value,
@@ -632,8 +745,41 @@ def process_entries(
                     generated=stats["ok"] + stats["empty"], reused=stats["skipped"],
                     failed=stats["failed"],
                 )
-        else:
+        elif not store:
             summary_state.save_if_needed()
+
+        # -- 情绪判断：摘要之后的第二次（很短）调用，缓存与摘要彼此独立 --
+        if do_emotion and summary_generated and status == "failed":
+            do_emotion = False                # 模型调用失败时不放大失败次数，重跑时一起重试
+            logger.info("摘要调用失败，本篇跳过情绪判断 entry_id=%s", entry_id)
+        emotion_label, emotion_status, emotion_error = "", None, None
+        if do_emotion:
+            if not content.strip():
+                emotion_status = "empty"      # 空正文：没有情绪可判断
+            else:
+                outcome = emotion_classifier.classify(entry)
+                emotion_label = outcome["emotion"]
+                emotion_status = outcome["status"]
+                emotion_error = outcome["error"]
+                if emotion_status == "ok":
+                    stats["emotions"] += 1
+                else:
+                    stats["emotion_failed"] += 1
+                    logger.warning("情绪判断失败 entry_id=%s date=%s：%s",
+                                   entry_id, entry.get("date"), emotion_error)
+            if emotion_status == "empty":
+                stats["emotion_empty"] += 1
+            written = store.upsert_emotion(
+                stable_key, emotion=emotion_label, status=emotion_status,
+                cache_key=emotion_key, algorithm_fingerprint=emotion_classifier.fingerprint,
+                error=emotion_error,
+            )
+            if not written:
+                logger.warning("情绪未写入（该篇还没有摘要记录，请先跑 --all）entry_id=%s", entry_id)
+            record["emotion"] = emotion_label
+            record["emotion_status"] = emotion_status
+            if record_tracked:
+                summary_state.put(entry_id, record)     # 让预览/日志看到情绪
 
         elapsed = time.monotonic() - started
         done = stats["ok"] + stats["empty"] + stats["failed"]
@@ -645,17 +791,32 @@ def process_entries(
             f"{len(summary_text)}字摘要" if status == "ok"
             else ("空摘要" if status == "empty" else f"失败({error})")
         )
+        if summary_skip:
+            detail = f"摘要复用（{detail}）"
+        emotion_detail = ""
+        if do_emotion and emotion_status:
+            emotion_detail = f" 情绪:{emotion_label or '无'}"
+            if emotion_status != "ok":
+                emotion_detail += f"({emotion_status})"
+        counters = (
+            f"有摘要:{stats['ok']} 空摘要:{stats['empty']} 失败:{stats['failed']} "
+            f"跳过:{stats['skipped']}"
+        )
+        if emotion_active:
+            counters += (
+                f" 情绪:{stats['emotions']} 情绪失败:{stats['emotion_failed']} "
+                f"情绪跳过:{stats['emotion_skipped']}"
+            )
         if not quiet:
             emit(
                 f"[{index}/{total}] {entry.get('date')} {entry.get('entry_type')} "
-                f"{entry.get('word_count')}字 → {detail} | 本篇 {entry_elapsed:.1f}s | "
+                f"{entry.get('word_count')}字 → {detail}{emotion_detail} | 本篇 {entry_elapsed:.1f}s | "
                 f"平均 {avg:.1f}s/篇 | 已用 {elapsed / 60:.0f}m | 剩余 ~{eta / 60:.0f}m | "
-                f"有摘要:{stats['ok']} 空摘要:{stats['empty']} 失败:{stats['failed']} "
-                f"跳过:{stats['skipped']} | {rate:.0f}条/h"
+                f"{counters} | {rate:.0f}条/h"
             )
         snapshot(
             "running", index, entry, entry_elapsed,
-            note=f"{entry.get('date')} → {detail} ｜ 有摘要 {stats['ok']} ｜ 空摘要 "
+            note=f"{entry.get('date')} → {detail}{emotion_detail} ｜ 有摘要 {stats['ok']} ｜ 空摘要 "
                  f"{stats['empty']} ｜ 失败 {stats['failed']} ｜ 跳过 {stats['skipped']}",
         )
         preview_tick(index)
@@ -670,12 +831,16 @@ def process_entries(
     stats["elapsed_seconds"] = round(time.monotonic() - started, 1)
     stats["calls"] = int(getattr(client, "call_count", 0))
     stats["completed"] = completed
+    if emotion_classifier is not None:
+        stats["emotion_calls"] = int(getattr(emotion_classifier, "call_count", 0))
     if not store:
         summary_state.save(force=True)
     snapshot(
         "done", total,
         note=f"处理结束：有摘要 {stats['ok']} ｜ 空摘要 {stats['empty']} ｜ 失败 {stats['failed']} "
-             f"｜ 跳过 {stats['skipped']}",
+             f"｜ 跳过 {stats['skipped']}"
+             + (f" ｜ 情绪 {stats['emotions']}（失败 {stats['emotion_failed']}）"
+                if emotion_classifier is not None else ""),
     )
     return stats
 
@@ -770,11 +935,11 @@ def build_summaries_payload(
 
 
 def build_database_payload(all_records, records, *, model, entry_types, years, stats=None):
-    """从 SQLite 当前记录构造导出 JSON。"""
+    """从 SQLite 当前记录构造导出 JSON（含情绪标签与情绪状态）"""
     keys = ("entry_key", "entry_id", "entry_date", "entry_type", "word_count",
-            "status", "summary", "model", "generated_at")
+            "status", "summary", "emotion", "emotion_status", "model", "generated_at")
     return {
-        "version": 3,
+        "version": 4,
         "generated_at": state_mod.now_iso(),
         "model": model,
         "entry_types": list(entry_types),
@@ -826,8 +991,8 @@ def print_summary(records: List[Dict], summary_state, stats: Optional[Dict] = No
         print(f"  {year}年: {count} 条")
 
 
-def dump_preview(entry: Dict, raw: str, summary_text: str):
-    """--test 用：打印原文片段、模型原始输出与清洗后的摘要"""
+def dump_preview(entry: Dict, raw: str, summary_text: str, emotion: Optional[Dict] = None):
+    """--test 用：打印原文片段、模型原始输出、清洗后的摘要与情绪判断"""
     print("-" * 60)
     print(
         f"日期: {entry.get('date')} | 类型: {entry.get('entry_type')} | "
@@ -842,6 +1007,11 @@ def dump_preview(entry: Dict, raw: str, summary_text: str):
         print(f"  {summary_text}（{len(summary_text)}字）")
     else:
         print("  （无摘要：模型给出了空答案）")
+    if emotion is not None:
+        label = emotion.get("emotion") or "（无标签）"
+        print(f"情绪判断: {label}（status={emotion.get('status')}）")
+        # 用 safe_snippet：模型若复述正文，超过 20 字就只打印长度，不把正文打到终端
+        print(f"  情绪原始输出: {emotion_mod.safe_snippet(emotion.get('raw'))}")
 
 
 # ---------------- 子命令 ----------------
@@ -914,10 +1084,19 @@ def _run_test_samples(args, settings, entries: List[Dict], reporter) -> int:
         return EXIT_NO_MODEL
 
     samples = pick_samples(entries, max(1, int(args.samples)), random.Random(bs_config.RANDOM_SEED))
+    fingerprint_settings = client_fingerprint_settings(settings, client)
+    emotion_classifier, _ = setup_emotion(args, settings, client, model, fingerprint_settings)
     print(
         f"模型: {model} | 地址: {client.base_url} | "
         f"思考: {client.reasoning_effort or '模型默认'} | Prompt 指纹: {prompt_sha1_value}"
     )
+    if emotion_classifier.enabled:
+        print(
+            f"情绪判断: 开启（标签 {'、'.join(settings.get('emotion_labels') or [])}，"
+            f"每篇额外一次调用）"
+        )
+    else:
+        print("情绪判断: 关闭（--no-emotion 或 .env 的 EMOTION_ENABLED=0）")
     print(f"符合条件 {len(entries)} 篇，抽样 {len(samples)} 篇（仅打印，不写状态/输出文件）")
 
     reporter.set_phase("calling_model", "抽样调用模型")
@@ -931,7 +1110,10 @@ def _run_test_samples(args, settings, entries: List[Dict], reporter) -> int:
             print(f"[错误] 调用失败：{exc}")
             reporter.note(f"[错误] 抽样 {entry.get('date')} 调用失败：{exc}")
             continue
-        dump_preview(entry, raw, summary.summarize_from_response(raw, entry, logger_=logger))
+        outcome = None
+        if emotion_classifier.enabled and (entry.get("content") or "").strip():
+            outcome = emotion_classifier.classify(entry)
+        dump_preview(entry, raw, summary.summarize_from_response(raw, entry, logger_=logger), outcome)
         reporter.note(f"抽样完成 {index}/{len(samples)}：{entry.get('date')}")
 
     reporter.set_phase("done", "抽样完成")
@@ -973,25 +1155,28 @@ def cmd_all(args, settings, paths: Dict[str, Path]) -> int:
             print(f"[错误] {exc}")
             return EXIT_NO_MODEL
 
-        fingerprint_settings = dict(settings)
-        fingerprint_settings.update({
-            "llm_temperature": client.temperature,
-            "llm_max_tokens": client.max_tokens,
-            "llm_json_mode": client.json_mode,
-            "llm_reasoning_effort": client.reasoning_effort,
-        })
+        fingerprint_settings = client_fingerprint_settings(settings, client)
         algorithm = algorithm_payload(fingerprint_settings, model, template)
         algorithm_fp = algorithm_fingerprint(algorithm)
         store = SummaryStore(settings["db_path"])
         store.migrate()
         store.register_algorithm(algorithm_fp, algorithm)
-        scope = {"years": years, "entry_types": entry_types, "limit": args.limit}
-        run_id = store.start_run(algorithm_fp, scope, len(entries))
+        emotion_classifier, emotion_fp = setup_emotion(
+            args, settings, client, model, fingerprint_settings, store=store,
+        )
+        scope = {"years": years, "entry_types": entry_types, "limit": args.limit,
+                 "emotion_only": bool(args.emotion_only)}
+        run_id = store.start_run(
+            algorithm_fp, scope, len(entries),
+            emotion_fingerprint=emotion_fp if emotion_classifier.enabled else None,
+        )
 
         logger.info(
-            "开始批量总结 | 模型=%s | 地址=%s | 思考=%s | Prompt指纹=%s | 类型=%s | 年份=%s | 条数=%d",
+            "开始批量总结 | 模型=%s | 地址=%s | 思考=%s | Prompt指纹=%s | 情绪=%s | 类型=%s | 年份=%s | 条数=%d",
             model, client.base_url, client.reasoning_effort or "模型默认",
-            prompt_sha1_value, ",".join(entry_types), years or "全部", len(entries),
+            prompt_sha1_value,
+            ",".join(settings.get("emotion_labels") or []) if emotion_classifier.enabled else "关闭",
+            ",".join(entry_types), years or "全部", len(entries),
         )
 
         days_total = len({str(e.get("date") or "") for e in entries if e.get("date")})
@@ -1006,6 +1191,14 @@ def cmd_all(args, settings, paths: Dict[str, Path]) -> int:
             f"空摘要 {previous.get('empty', 0)} / 失败 {previous.get('failed', 0)}"
         )
         print("可随时 Ctrl+C 中断：下次重跑同一命令会自动续跑，已处理的条目不会再调用模型")
+        if emotion_classifier.enabled:
+            print(
+                f"情绪判断：每篇额外一次调用（只回一个词）｜标签 "
+                f"{'、'.join(settings.get('emotion_labels') or [])}"
+                f"{'（复用缓存，仅补缺失）' if args.emotion_only else ''}"
+            )
+        else:
+            print("情绪判断：已关闭（--no-emotion 或 .env 的 EMOTION_ENABLED=0）")
         print(
             f"运行期间每 {reporter.interval:.0f} 秒自动打印一次状态；"
             f"也可随时打开 {paths['status']} 查看"
@@ -1030,6 +1223,8 @@ def cmd_all(args, settings, paths: Dict[str, Path]) -> int:
                 year_label=",".join(str(y) for y in years) if years else "全部",
                 reporter=reporter, preview=preview,
                 store=store, algorithm_fingerprint_value=algorithm_fp, run_id=run_id,
+                emotion_classifier=emotion_classifier,
+                emotion_only=args.emotion_only, force_emotion=args.force_emotion,
             )
         except KeyboardInterrupt:
             store.update_run(run_id, status="interrupted")

@@ -14,6 +14,9 @@
     LLM_TEMPERATURE=0.2
     LLM_JSON_MODE=0             # 1=请求 JSON 模式（部分模型不支持）
     LLM_REASONING_EFFORT=none   # 推理模型思考开关：none=关闭思考；留空=不发送该参数
+    EMOTION_ENABLED=1           # 1=每篇额外做一次情绪判断（默认开启）；0=只写摘要
+    EMOTION_LABELS=快乐,平淡,悲伤,生气,焦虑,疲惫,期待,其他   # 标签集（最后一项为兜底）
+    LLM_EMOTION_MAX_TOKENS=32   # 情绪判断的生成上限（只输出一个词）
     ALLOW_REMOTE_LLM=0          # 保持 0：只用本地模型，拒绝云端地址
     SUMMARY_HEARTBEAT_SECONDS=30 # 运行期间每隔多少秒打印一次状态块
     SUMMARY_PREVIEW_SECONDS=60   # 运行期间每隔多少秒刷新一次 中途预览.md（0 = 关闭）
@@ -92,6 +95,38 @@ REJECT_SUMMARIES = {
     "none", "null", "nan", "na", "n/a", "-", "—", "……", "...",
 }
 
+# ---------------- 情绪分类（.env 可覆盖） ----------------
+# 与摘要各自独立：每篇在摘要之后额外发一次很短的询问，只让它回一个标签词。
+# 标签集来自根 .env 的 EMOTION_LABELS（根 config.get_emotion_labels()），
+# batch 与 Web 共用同一份定义，改一处两边同步。
+EMOTION_PROMPT_FILE = BASE_DIR / "prompts" / "diary_emotion_prompt.txt"
+EMOTION_LABEL_VERSION = "emotion-labels-v1"   # 归一化规则变化时递增（会让情绪重算）
+DEFAULT_EMOTION_ENABLED = True                # EMOTION_ENABLED=0 可关闭（老库改造前想纯跑摘要时用）
+EMOTION_LABELS = tuple(root_config.get_emotion_labels())
+EMOTION_FALLBACK = EMOTION_LABELS[-1]         # 无法归类时的兜底标签（约定取标签集最后一项）
+DEFAULT_EMOTION_MAX_TOKENS = 32               # 只输出一个词，32 足够
+DEFAULT_EMOTION_TEMPERATURE = 0.0             # 分类任务取样温度：0 更稳定
+EMOTION_MAX_OUTPUT_CHARS = 40                 # 子串兜底匹配的长度上限（输出太长就不猜）
+# 别名 -> 标准标签（模型偶尔会写"开心""郁闷"这类词；命中别名就归一化）
+EMOTION_ALIASES = {
+    "高兴": "快乐", "开心": "快乐", "愉快": "快乐", "喜悦": "快乐", "兴奋": "快乐",
+    "幸福": "快乐", "欢乐": "快乐", "满足": "快乐", "轻松": "快乐", "惊喜": "快乐",
+    "愉快的一天": "快乐", "爽": "快乐",
+    "平静": "平淡", "平常": "平淡", "普通": "平淡", "中性": "平淡", "无聊": "平淡",
+    "一般": "平淡", "日常": "平淡", "寻常": "平淡", "无": "平淡", "没什么": "平淡",
+    "难过": "悲伤", "伤心": "悲伤", "低落": "悲伤", "沮丧": "悲伤", "悲哀": "悲伤",
+    "痛苦": "悲伤", "忧郁": "悲伤", "抑郁": "悲伤", "郁闷": "悲伤", "失落": "悲伤",
+    "心碎": "悲伤", "想哭": "悲伤",
+    "愤怒": "生气", "恼火": "生气", "气愤": "生气", "火大": "生气", "恼怒": "生气",
+    "不爽": "生气", "吵架": "生气",
+    "担心": "焦虑", "担忧": "焦虑", "紧张": "焦虑", "不安": "焦虑", "烦躁": "焦虑",
+    "心焦": "焦虑", "压力": "焦虑", "害怕": "焦虑", "恐惧": "焦虑", "恐慌": "焦虑",
+    "累": "疲惫", "疲劳": "疲惫", "疲倦": "疲惫", "困": "疲惫", "精疲力尽": "疲惫",
+    "心力交瘁": "疲惫", "疲惫不堪": "疲惫",
+    "期盼": "期待", "盼望": "期待", "憧憬": "期待", "向往": "期待", "希望": "期待",
+    "混合": "其他", "复杂": "其他", "矛盾": "其他", "无法判断": "其他", "未知": "其他",
+}
+
 # ---------------- 调用与可靠性 ----------------
 REQUEST_INTERVAL_SECONDS = 0.5         # 两次请求之间的最小间隔
 MAX_RETRIES = 3                        # 单篇最多尝试次数（含首次）
@@ -152,6 +187,12 @@ def get_settings():
             env, "LLM_REASONING_EFFORT", DEFAULT_LLM_REASONING_EFFORT
         ).lower(),
         "allow_remote_llm": _env_bool(env, "ALLOW_REMOTE_LLM", False),
+        "emotion_enabled": _env_bool(env, "EMOTION_ENABLED", DEFAULT_EMOTION_ENABLED),
+        "emotion_labels": list(EMOTION_LABELS),
+        "emotion_fallback": EMOTION_FALLBACK,
+        "emotion_label_version": EMOTION_LABEL_VERSION,
+        "emotion_temperature": DEFAULT_EMOTION_TEMPERATURE,
+        "emotion_max_tokens": _env_int(env, "LLM_EMOTION_MAX_TOKENS", DEFAULT_EMOTION_MAX_TOKENS),
         "content_head_chars": CONTENT_HEAD_CHARS,
         "content_tail_chars": CONTENT_TAIL_CHARS,
         "max_summary_chars": MAX_SUMMARY_CHARS,

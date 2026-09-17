@@ -17,8 +17,8 @@
 
 - 📝 **日记导入**：智能识别多种日记格式（单日 / 整月合集 / 多日合一），自动分类和解析
 - 🔍 **全文搜索**：基于 SQLite FTS5 的高效全文检索
-- 🧠 **日记批量总结**：用本地 LLM 为**每一篇**日记写一段摘要（不做重要性筛选），按年份整理成目录 → [详细说明](scripts/batch_summary/README.md)
-- 🌐 **网页浏览**：React 本地只读界面，支持浏览、搜索、摘要、「过去的今天」与随机回看 → [详细说明](webapp/README.md)
+- 🧠 **日记批量总结**：用本地 LLM 为**每一篇**日记写一段摘要（不做重要性筛选），并额外判断情绪标签，按年份整理成目录 → [详细说明](scripts/batch_summary/README.md)
+- 🌐 **网页浏览**：React 本地只读界面，支持浏览、搜索、摘要（可按情绪筛选）、「过去的今天」与随机回看 → [详细说明](webapp/README.md)
 - 📊 **统计分析**：年度写作统计和趋势分析
 
 ## 系统要求
@@ -100,12 +100,14 @@ python scripts/yearly_stats.py
 ### 3. 日记批量总结（本地 LLM 逐篇写摘要）
 
 用本地 LM Studio 模型逐篇阅读数据库中的日记，为**每一篇**写一段摘要（不做"重要/不重要"的筛选），
-生成按年份排列的 `日记总结.md`，并将摘要逐篇提交到同一个 SQLite 数据库供 Web 查询。
+再额外判断一次**情绪标签**（默认 8 类：快乐/平淡/悲伤/生气/焦虑/疲惫/期待/其他），
+生成按年份排列的 `日记总结.md`，并将摘要与情绪逐篇提交到同一个 SQLite 数据库供 Web 查询与筛选。
 
 ```bash
 python scripts/batch_summary/main.py --models             # 1) 确认本地模型名（写入 .env）
-python scripts/batch_summary/main.py --test --samples 10  # 2) 抽样试跑
+python scripts/batch_summary/main.py --test --samples 10  # 2) 抽样试跑（同时打印情绪判断结果）
 python scripts/batch_summary/main.py --all                # 3) 全量生成（可 Ctrl+C，重跑续跑）
+python scripts/batch_summary/main.py --emotion-only       # 4) 只给老库补情绪（摘要一条都不重跑）
 ```
 
 命令行参数、实时进度与中途预览、产物位置、断点续跑、Prompt 与摘要长度调整，
@@ -181,6 +183,7 @@ MyOwnDiaryRag/
 - **AI 模型**：LM Studio 本地模型（仅用于日记批量总结，非本机地址会被拒绝）
 - **Web 层**：React + TypeScript + Vite SPA；FastAPI 提供只读 JSON API 与生产静态包
 - **摘要存储**：与原始日记同一个 SQLite，使用稳定业务键和正文/算法 SHA-256 指纹
+- **情绪标签**：摘要之外的第二条派生数据，拥有**独立**的算法指纹与缓存键（补情绪不会让摘要失效）
 
 ## 关于为何移除 RAG 问答
 

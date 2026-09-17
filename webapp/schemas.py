@@ -114,8 +114,21 @@ class SummaryItem(BaseModel):
     word_count: Optional[int] = None
     status: str
     summary: str = ""
+    emotion: str = ""
+    emotion_status: Optional[str] = None
     model: Optional[str] = None
     generated_at: Optional[str] = None
+
+
+class EmotionCount(BaseModel):
+    """情绪标签及其条数（供前端下拉显示；count=0 的标签也会出现）"""
+
+    emotion: str
+    count: int
+
+
+class EmotionListResponse(BaseModel):
+    items: List[EmotionCount]
 
 
 class SummaryListResponse(BaseModel):

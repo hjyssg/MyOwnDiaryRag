@@ -6,4 +6,6 @@ export interface MonthStat { month:number; entries:number; words:number }
 export interface OnThisDayItem { id:number; date:string; year:number; entry_type:string; word_count:number; preview:string }
 export interface OnThisDayResponse { month:number; day:number; total:number; groups:{year:number;items:OnThisDayItem[]}[] }
 export interface RandomDayResponse { date:string; year:number; month:number; day:number; total:number; items:OnThisDayItem[] }
-export interface SummaryItem { entry_key:string|null; entry_id:number|null; entry_date:string|null; entry_type:string|null; word_count:number|null; status:'ok'|'empty'|'failed'|'missing'|'stale'; summary:string; model:string|null; generated_at:string|null }
+export interface SummaryItem { entry_key:string|null; entry_id:number|null; entry_date:string|null; entry_type:string|null; word_count:number|null; status:'ok'|'empty'|'failed'|'missing'|'stale'; summary:string; emotion:string; emotion_status:'ok'|'empty'|'failed'|'missing'|'stale'|null; model:string|null; generated_at:string|null }
+export interface EmotionCount { emotion:string; count:number }
+export interface EmotionListResponse { items:EmotionCount[] }

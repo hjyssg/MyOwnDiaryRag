@@ -48,7 +48,8 @@ PHASE_LABELS = {
 BAR_WIDTH = 30
 _MIN_INTERVAL = 0.01               # 心跳最小间隔（防止把终端刷爆）
 _DIGITS_ONLY = re.compile(r"^[\d,\-、\s]+$")
-_STATS_KEYS = ("ok", "empty", "failed", "skipped", "summaries")
+_STATS_KEYS = ("ok", "empty", "failed", "skipped", "summaries",
+               "emotions", "emotion_empty", "emotion_failed", "emotion_skipped")
 
 
 def phase_label(phase: Optional[str]) -> str:
@@ -133,6 +134,9 @@ def build_progress_snapshot(
         "empty": stats["empty"],
         "failed": stats["failed"],
         "summaries": stats["summaries"],
+        "emotions": int(stats.get("emotions", 0) or 0),
+        "emotion_failed": int(stats.get("emotion_failed", 0) or 0),
+        "emotion_skipped": int(stats.get("emotion_skipped", 0) or 0),
         "days_done": int(days_done or 0),
         "days_total": int(days_total or 0),
         "elapsed_seconds": round(elapsed, 1),
@@ -194,9 +198,14 @@ def format_blocks(snapshot: Optional[Dict], *, now=None) -> str:
         lines.append(f"{prefix} 正在处理：{text}")
 
     lines.append(f"{prefix} 最近日志：{snapshot.get('last_log') or '（暂无）'}")
-    lines.append(
+    result_line = (
         f"{prefix} 结果：有摘要 {ok} ｜ 空摘要 {empty} ｜ 失败 {failed} ｜ 跳过(断点) {skipped}"
     )
+    emotions = int(snapshot.get("emotions") or 0)
+    emotion_failed = int(snapshot.get("emotion_failed") or 0)
+    if emotions or emotion_failed:
+        result_line += f" ｜ 情绪 {emotions}（失败 {emotion_failed}）"
+    lines.append(result_line)
 
     avg = float(snapshot.get("avg_seconds_per_entry") or 0.0)
     rate = float(snapshot.get("entries_per_hour") or 0.0)

@@ -226,21 +226,29 @@ class LLMClient:
             time.sleep(self.interval - elapsed)
 
     # -- 请求体 --
-    def build_payload(self, prompt: str) -> Dict:
-        """构造 chat/completions 请求体"""
+    def build_payload(self, prompt: str, **overrides) -> Dict:
+        """构造 chat/completions 请求体
+
+        ``overrides`` 支持 ``max_tokens`` / ``temperature`` / ``json_mode`` /
+        ``reasoning_effort``，只影响这一次请求（情绪判断用它把输出压到一个词）。
+        不传时完全沿用客户端（即 .env）的设置。
+        """
+        json_mode = self.json_mode if overrides.get("json_mode") is None else bool(overrides["json_mode"])
+        effort = self.reasoning_effort if overrides.get("reasoning_effort") is None else overrides["reasoning_effort"]
         return build_chat_payload(
             prompt,
             model=self.resolve_model(),
-            temperature=self.temperature,
-            max_tokens=self.max_tokens,
-            json_mode=self.json_mode,
-            reasoning_effort=self.reasoning_effort,
+            temperature=self.temperature if overrides.get("temperature") is None else float(overrides["temperature"]),
+            max_tokens=self.max_tokens if overrides.get("max_tokens") is None else int(overrides["max_tokens"]),
+            json_mode=json_mode,
+            reasoning_effort=effort,
         )
 
     # -- 调用 --
-    def chat(self, prompt: str) -> str:
+    def chat(self, prompt: str, **overrides) -> str:
         """发送单条 user 消息，返回模型文本；失败抛 LLMError"""
-        payload = self.build_payload(prompt)
+        payload = self.build_payload(prompt, **overrides)
+        effective_max_tokens = int(payload.get("max_tokens") or self.max_tokens)
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         url = f"{self.base_url}/chat/completions"
 
@@ -261,7 +269,7 @@ class LLMClient:
                 message = choice.get("message") or {}
                 content = message.get("content") or ""
                 if not content.strip():
-                    raise LLMError(self._empty_response_error(choice, message, data))
+                    raise LLMError(self._empty_response_error(choice, message, data, effective_max_tokens))
                 return content
             except urllib.error.HTTPError as exc:
                 detail = ""
@@ -289,7 +297,8 @@ class LLMClient:
 
         raise LLMError(f"重试 {self.max_retries} 次仍失败：{last_error}")
 
-    def _empty_response_error(self, choice: Dict, message: Dict, data: Dict) -> str:
+    def _empty_response_error(self, choice: Dict, message: Dict, data: Dict,
+                              max_tokens: Optional[int] = None) -> str:
         """content 为空时的可诊断原因
 
         推理模型把 token 预算全花在思考上（``reasoning_content`` 有内容、
@@ -307,7 +316,7 @@ class LLMClient:
             text += "）"
         if finish == "length":
             text += (
-                f"；finish_reason=length：被 max_tokens={self.max_tokens} 截断。"
+                f"；finish_reason=length：被 max_tokens={max_tokens or self.max_tokens} 截断。"
                 "若是推理模型，请设置 LLM_REASONING_EFFORT=none 关闭思考，"
                 "或调大 LLM_MAX_TOKENS（建议同时调大 LLM_TIMEOUT）"
             )

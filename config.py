@@ -56,3 +56,39 @@ def get_config():
         'diary_base_path': get_diary_base_path(),
         'database_path': get_database_path(),
     }
+
+
+# ---------------- 情绪标签集（batch 与 Web 共用同一份配置） ----------------
+# 默认 8 类：由 .env 的 EMOTION_LABELS 覆盖（逗号/中文逗号分隔，保序、去重）。
+# 约定：最后一项是"无法归类"的兜底标签，改标签集会让情绪重新计算（摘要不受影响）。
+DEFAULT_EMOTION_LABELS = ("快乐", "平淡", "悲伤", "生气", "焦虑", "疲惫", "期待", "其他")
+
+EMOTION_LABEL_SEPARATORS = (",", "，", "、", ";", "；")
+
+
+def split_emotion_labels(value):
+    """把 ``EMOTION_LABELS`` 的原始字符串切成有序去重的标签列表（可被测试直接调用）。"""
+    text = str(value or "")
+    for separator in EMOTION_LABEL_SEPARATORS:
+        text = text.replace(separator, ",")
+    labels = []
+    for item in text.split(","):
+        label = item.strip()
+        if label and label not in labels:
+            labels.append(label)
+    return labels
+
+
+def get_emotion_labels():
+    """情绪标签集：优先读 .env，读不到（缺文件/未配置）时用默认 8 类。
+
+    这里**不抛异常**：Web 的 /api/summaries 需要它来校验 emotion 参数，
+    批量总结也要用它来构造 Prompt 与算法指纹；没有 .env 时退回默认值即可。
+    """
+    try:
+        env = load_env()
+    except Exception:
+        return list(DEFAULT_EMOTION_LABELS)
+    labels = split_emotion_labels(env.get("EMOTION_LABELS"))
+    return labels or list(DEFAULT_EMOTION_LABELS)
+
