@@ -128,8 +128,8 @@ RANDOM_SEED = 20260101                 # --test 抽样用的固定随机种子
 
 # ---------------- 默认处理范围 ----------------
 # 默认排除 stock_diary（620 条日常炒股流水），需要时用 --types/--include-stock 纳入
-DEFAULT_ENTRY_TYPES = ("single_day", "multi_day", "note", "retrospective", "summary")
-ALL_ENTRY_TYPES = ("single_day", "multi_day", "stock_diary", "note", "retrospective", "summary")
+DEFAULT_ENTRY_TYPES = ("diary", "note", "retrospective", "summary")
+ALL_ENTRY_TYPES = ("diary", "stock_diary", "note", "retrospective", "summary")
 
 
 def _env_str(env, key, default=""):

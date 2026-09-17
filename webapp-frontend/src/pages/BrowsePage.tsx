@@ -30,7 +30,7 @@ export function BrowsePage() {
         </select>
         <select name="entry_type" defaultValue={p.get('entry_type') ?? ''}>
           <option value="">全部类型</option>
-          {['single_day', 'multi_day', 'stock_diary', 'retrospective', 'summary', 'note'].map(
+          {['diary', 'stock_diary', 'retrospective', 'summary', 'note'].map(
             (t) => (
               <option key={t}>{t}</option>
             ),

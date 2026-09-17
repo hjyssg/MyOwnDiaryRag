@@ -46,7 +46,7 @@ def make_entry(**overrides):
         "year": 2015,
         "month": 1,
         "day": 20,
-        "entry_type": "multi_day",
+        "entry_type": "diary",
         "word_count": 12,
         "content": "又被同事甩锅，气得睡不着。",
     }
@@ -169,13 +169,13 @@ class ClassifierTests(unittest.TestCase):
 
     def test_emotion_cache_key_is_separate_from_summary_key(self):
         classifier = self.make_classifier(FakeClient())
-        key = classifier.cache_key("v1:2015-01-20:multi_day", "digest")
+        key = classifier.cache_key("v1:2015-01-20:diary", "digest")
         self.assertEqual(
             key,
-            cache_key("v1:2015-01-20:multi_day", "digest", "fp-1",
+            cache_key("v1:2015-01-20:diary", "digest", "fp-1",
                       namespace=EMOTION_CACHE_NAMESPACE),
         )
-        self.assertNotEqual(key, cache_key("v1:2015-01-20:multi_day", "digest", "fp-1"))
+        self.assertNotEqual(key, cache_key("v1:2015-01-20:diary", "digest", "fp-1"))
 
 
 class EmotionFingerprintTests(unittest.TestCase):

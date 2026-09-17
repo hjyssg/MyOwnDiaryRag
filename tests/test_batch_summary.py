@@ -38,7 +38,7 @@ def make_entry(**overrides):
         "year": 2015,
         "month": 1,
         "day": 20,
-        "entry_type": "multi_day",
+        "entry_type": "diary",
         "word_count": 12,
         "content": "今天去公园散步，全家都很开心。",
     }
@@ -50,7 +50,7 @@ def make_record(entry_id=1, entry_date="2015-01-20", text="今天去公园散步
     record = {
         "entry_id": entry_id,
         "entry_date": entry_date,
-        "entry_type": "multi_day",
+        "entry_type": "diary",
         "word_count": 12,
         "summary": text,
     }

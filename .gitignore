@@ -24,8 +24,6 @@ ENV/
 build/
 develop-eggs/
 dist/
-!webapp-frontend/dist/
-!webapp-frontend/dist/**
 downloads/
 eggs/
 .eggs/
@@ -39,7 +37,7 @@ wheels/
 .installed.cfg
 *.egg
 
-# Node（生产包 webapp-frontend/dist 需要提交，供 FastAPI 直接托管）
+# Node（webapp-frontend/dist 不入库：运行 npm run build 生成，由 FastAPI 托管；缺失时后端返回 503 提示）
 node_modules/
 webapp-frontend/.vite/
 *.tsbuildinfo

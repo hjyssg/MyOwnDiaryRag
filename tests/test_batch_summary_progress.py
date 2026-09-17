@@ -64,9 +64,9 @@ def make_snapshot(**overrides):
         "eta_seconds": 1200,
         "entries_per_hour": 560.0,
         "current_entry": {"entry_id": 5, "date": "2025-06-18",
-                          "entry_type": "multi_day", "word_count": 245},
+                          "entry_type": "diary", "word_count": 245},
         "wait_seconds": 12.0,
-        "last_log": "正在处理 2025-06-18 multi_day 245字（等待模型响应）",
+        "last_log": "正在处理 2025-06-18 diary 245字（等待模型响应）",
         "updated_at": state_mod.now_iso(),
     }
     snapshot.update(overrides)
@@ -91,7 +91,7 @@ class FormatTests(unittest.TestCase):
         self.assertIn("已处理：140 / 328 篇（42.7%）", text)
         self.assertIn("覆盖 139 / 328 天", text)
         self.assertIn("当前阶段：调用模型（等待本地模型返回（一次一篇））", text)
-        self.assertIn("正在处理：2025-06-18 multi_day 245字（已等待 12s）", text)
+        self.assertIn("正在处理：2025-06-18 diary 245字（已等待 12s）", text)
         self.assertIn("最近日志：正在处理 2025-06-18", text)
         self.assertIn("结果：有摘要 86 ｜ 空摘要 54 ｜ 失败 0 ｜ 跳过(断点) 0", text)
         self.assertIn("预计剩余约", text)
@@ -124,7 +124,7 @@ class ReporterTests(unittest.TestCase):
         self.assertIn("日记批量总结任务运行中", self.stream.getvalue())    # 启动立刻打一块
         reporter.set_total(2, days_total=2)
         reporter.update(1, current={"id": 1, "date": "2025-01-01",
-                                    "entry_type": "multi_day", "word_count": 10})
+                                    "entry_type": "diary", "word_count": 10})
         time.sleep(0.25)
         self.assertGreaterEqual(self.stream.getvalue().count("日记批量总结任务运行中"), 2)
         reporter.stop()
@@ -194,7 +194,7 @@ class FakeClient:
 def make_entry(**overrides):
     entry = {
         "id": 1, "date": "2015-01-20", "year": 2015, "month": 1, "day": 20,
-        "entry_type": "multi_day", "word_count": 12,
+        "entry_type": "diary", "word_count": 12,
         "content": "今天去公园散步，全家都很开心。",
     }
     entry.update(overrides)

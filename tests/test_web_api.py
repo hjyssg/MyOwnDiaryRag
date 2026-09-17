@@ -52,10 +52,10 @@ CREATE TABLE diary_entries (
 """
 
 ENTRIES = [
-    ("2023-09-17", 2023, 9, 17, "旧年旅行记录", "2023.txt", "single_day", 6),
+    ("2023-09-17", 2023, 9, 17, "旧年旅行记录", "2023.txt", "diary", 6),
     ("2024-08-01", 2024, 8, 1, "普通八月日记", "2024-08.txt", "note", 6),
-    ("2024-09-17", 2024, 9, 17, "旅行与朋友聚会", "2024-09.txt", "single_day", 8),
-    ("2024-09-18", 2024, 9, 18, "工作记录", "2024-09.txt", "single_day", 4),
+    ("2024-09-17", 2024, 9, 17, "旅行与朋友聚会", "2024-09.txt", "diary", 8),
+    ("2024-09-18", 2024, 9, 18, "工作记录", "2024-09.txt", "diary", 4),
 ]
 
 
@@ -109,7 +109,7 @@ class WebApiTests(unittest.TestCase):
             params={
                 "year": 2024,
                 "month": 9,
-                "entry_type": "single_day",
+                "entry_type": "diary",
                 "q": "  旅行  ",
             },
         )
@@ -268,7 +268,7 @@ class SummaryEmotionApiTests(unittest.TestCase):
         self.emotion_fingerprint = algorithm_fingerprint(emotion_alg)
         store.register_algorithm(self.emotion_fingerprint, emotion_alg)
 
-        date, entry_type, summary = "2024-09-17", "single_day", "旅行与朋友聚会"
+        date, entry_type, summary = "2024-09-17", "diary", "旅行与朋友聚会"
         key = entry_key({"date": date, "entry_type": entry_type})
         digest = source_hash("旅行与朋友聚会")
         store.upsert({"date": date, "year": 2024, "month": 9, "day": 17, "entry_type": entry_type,
@@ -279,7 +279,7 @@ class SummaryEmotionApiTests(unittest.TestCase):
         store.upsert_emotion(key, emotion="生气", status="ok", cache_key="emotion-cache-1",
                              algorithm_fingerprint=self.emotion_fingerprint)
 
-        other_date, other_type = "2024-09-18", "single_day"
+        other_date, other_type = "2024-09-18", "diary"
         other_key = entry_key({"date": other_date, "entry_type": other_type})
         other_digest = source_hash("工作记录")
         store.upsert({"date": other_date, "year": 2024, "month": 9, "day": 18,

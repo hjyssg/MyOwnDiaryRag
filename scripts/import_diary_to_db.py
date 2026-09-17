@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 日记数据库导入脚本 v2
-优化：智能文件类型判断、月份校验、同日合并、笔误检测、新增entry_type
+优化：智能文件分类、月份校验、同日合并、笔误检测、entry_type（普通日记统一为 diary）
 """
 
 import os
@@ -235,8 +235,11 @@ class DiaryImporter:
 
     def classify_file(self, file_path, year, content):
         """
-        智能分类文件类型
-        返回: 'single_day' | 'multi_day' | 'stock_diary' | 'retrospective' | 'summary' | 'note'
+        智能分类文件
+        返回: 'diary' | 'stock_diary' | 'retrospective' | 'summary' | 'note'
+
+        普通日记（单日文件 MM_DD.txt、多日合一、整月合集 MM月.txt）统一归为 'diary'；
+        「整篇存还是按日期标记拆分」由 should_split_content() 单独判断，不再写进 entry_type。
         """
         filename = file_path.name
         filename_lower = filename.lower()
@@ -260,20 +263,27 @@ class DiaryImporter:
         if any(kw in filename_lower for kw in ['semester', 'term', 'vaction']):
             return 'summary'
 
-        # MM_DD.txt 格式的文件：通过内容中日期标记数量判断
-        file_date = self.parse_date_from_filename(filename, year)
-        if file_date:
-            date_marker_count = self.count_date_markers(content, year)
-            if date_marker_count >= 2:
-                return 'multi_day'
-            return 'single_day'
+        # MM_DD.txt 格式的普通日记文件
+        if self.parse_date_from_filename(filename, year):
+            return 'diary'
 
         # 整月合集 MM月.txt / MM月-标题.txt（如 01月.txt、05月-旅行记录.txt）
         if self.parse_month_from_filename(filename, year):
-            return 'multi_day'
+            return 'diary'
 
         # 无法识别
         return 'note'
+
+    def should_split_content(self, filename, year, content):
+        """该日记文件是否需要按内容里的日期标记拆成单天（文件布局问题，与 entry_type 无关）"""
+        # 整月合集 MM月.txt：一定按日期标记拆
+        if self.parse_month_from_filename(filename, year):
+            return True
+        # MM_DD.txt：内容里有 >=2 个日期标记才拆，否则整篇就是一天
+        if self.parse_date_from_filename(filename, year):
+            return self.count_date_markers(content, year) >= 2
+        # 其它（股票日记等文件名不带日期的合集）：一律尝试拆分
+        return True
 
     def process_file(self, file_path, year):
         """处理单个文件"""
@@ -299,18 +309,11 @@ class DiaryImporter:
                     'file_source': relative_path
                 })
 
-            elif file_type == 'single_day':
-                file_date = self.parse_date_from_filename(filename, year)
-                if file_date:
-                    entries.append({
-                        'date': file_date,
-                        'content': content,
-                        'entry_type': 'single_day',
-                        'file_source': relative_path
-                    })
-
-            elif file_type in ('multi_day', 'stock_diary'):
-                multi_entries = self.split_multi_day_content(content, year, relative_path)
+            elif file_type in ('diary', 'stock_diary'):
+                # 普通日记与股票日记都按「一天一条」入库：
+                # 单日文件整篇存；多日合一 / 整月合集按日期标记拆成单天。
+                need_split = self.should_split_content(filename, year, content)
+                multi_entries = self.split_multi_day_content(content, year, relative_path) if need_split else []
                 if multi_entries:
                     for entry in multi_entries:
                         entries.append({
@@ -320,7 +323,7 @@ class DiaryImporter:
                             'file_source': relative_path
                         })
                 else:
-                    # 拆分失败，作为整体存储
+                    # 单日文件，或拆分失败时作为整体存储
                     fallback_date = self.parse_date_from_filename(filename, year)
                     if not fallback_date:
                         fallback_month = self.parse_month_from_filename(filename, year)
@@ -334,7 +337,8 @@ class DiaryImporter:
                         'entry_type': file_type,
                         'file_source': relative_path
                     })
-                    logger.warning(f"多日拆分失败，整体存储: {relative_path}")
+                    if need_split:
+                        logger.warning(f"多日拆分失败，整体存储: {relative_path}")
 
             elif file_type == 'summary':
                 entries.append({

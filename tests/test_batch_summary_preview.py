@@ -47,7 +47,7 @@ def make_entry(**overrides):
         "year": 2015,
         "month": 1,
         "day": 20,
-        "entry_type": "multi_day",
+        "entry_type": "diary",
         "word_count": 12,
         "content": "今天去公园散步，全家都很开心。",
     }
@@ -79,7 +79,7 @@ def make_record(entry_id=1, entry_date="2015-01-20", text="今天去公园散步
     return {
         "entry_id": entry_id,
         "entry_date": entry_date,
-        "entry_type": "multi_day",
+        "entry_type": "diary",
         "word_count": 12,
         "summary": text,
     }
@@ -90,7 +90,7 @@ def put_result(state, entry_id, entry_date="2015-01-20", summary="今天去公�
     state.put(entry_id, {
         "entry_id": entry_id,
         "entry_date": entry_date,
-        "entry_type": "multi_day",
+        "entry_type": "diary",
         "word_count": 12,
         "content_hash": "h",
         "prompt_sha1": "p1",
@@ -106,12 +106,12 @@ class PreviewRenderTests(unittest.TestCase):
         records = [make_record()]
         text = render.render_preview(
             records, processed=412, total=3964,
-            current={"date": "2019-06-18", "entry_type": "multi_day", "word_count": 245},
+            current={"date": "2019-06-18", "entry_type": "diary", "word_count": 245},
             every=60, now=NOW,
         )
         self.assertIn("# 日记总结（中途预览）", text)
         self.assertIn("> 截至 12:03:41 ｜ 已处理 412 / 3964 篇（10.4%）", text)
-        self.assertIn("正在处理 2019-06-18 multi_day 245字", text)
+        self.assertIn("正在处理 2019-06-18 diary 245字", text)
         self.assertIn("每 60 秒自动更新", text)
         self.assertIn("- 0120 今天去公园散步，全家都很开心。", text)
 

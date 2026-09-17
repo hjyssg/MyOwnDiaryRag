@@ -277,10 +277,18 @@ def parse_years(args) -> Optional[List[int]]:
     return sorted(set(years)) or None
 
 
+# 旧类型 -> 现类型：single_day / multi_day 已合并为普通日记 diary
+LEGACY_ENTRY_TYPE_ALIASES = {"single_day": "diary", "multi_day": "diary"}
+
+
 def resolve_entry_types(args) -> List[str]:
-    """解析要处理的条目类型（默认排除 stock_diary）"""
+    """解析要处理的条目类型（默认排除 stock_diary；兼容旧的 single_day / multi_day）"""
     if args.types:
-        types = [t.strip() for t in str(args.types).split(",") if t.strip()]
+        types: List[str] = []
+        for chunk in str(args.types).split(","):
+            name = LEGACY_ENTRY_TYPE_ALIASES.get(chunk.strip(), chunk.strip())
+            if name and name not in types:
+                types.append(name)
         unknown = [t for t in types if t not in bs_config.ALL_ENTRY_TYPES]
         if unknown:
             raise SystemExit(

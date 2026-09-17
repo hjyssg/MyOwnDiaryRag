@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS diary_entries (
     day INTEGER NOT NULL,                         -- 日期 (便于查询)
     content TEXT NOT NULL,                        -- 日记内容
     file_source TEXT,                             -- 源文件路径
-    entry_type TEXT CHECK(entry_type IN ('single_day', 'multi_day', 'retrospective', 'summary', 'stock_diary', 'note')), -- 文件类型
+    entry_type TEXT CHECK(entry_type IN ('diary', 'retrospective', 'summary', 'stock_diary', 'note')), -- 条目分类（普通日记=diary）
     word_count INTEGER DEFAULT 0,                 -- 字数统计
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
