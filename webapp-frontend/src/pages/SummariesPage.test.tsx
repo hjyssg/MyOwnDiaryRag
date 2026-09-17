@@ -30,14 +30,22 @@ const emotions = {
     { emotion: '生气', count: 1 },
   ],
 }
+// 摘要页复用的年 / 月筛选组件会请求这两个统计接口
+const years = [{ year: 2024, entries: 1, words: 6 }]
+const months = [{ month: 9, entries: 1, words: 6 }]
+function bodyFor(url: string) {
+  if (url.includes('/api/summaries/emotions')) return emotions
+  if (url.includes('/api/years')) return years
+  if (url.includes('/api/months')) return months
+  return summary
+}
 function stubFetch() {
   const calls: string[] = []
   const impl = (input: RequestInfo | URL) => {
     const url = String(input)
     calls.push(url)
-    const body = url.includes('/api/summaries/emotions') ? emotions : summary
     return Promise.resolve(
-      new Response(JSON.stringify(body), {
+      new Response(JSON.stringify(bodyFor(url)), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
       }),

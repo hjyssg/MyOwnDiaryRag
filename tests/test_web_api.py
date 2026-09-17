@@ -198,7 +198,12 @@ class WebApiTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.headers["cache-control"], "no-store")
-        self.assertEqual(response.json()["total"], 1)
+        body = response.json()
+        self.assertEqual(body["total"], 1)
+        # 随机页要能直接展示全文，因此响应必须带 content（而不是只有 120 字预览）
+        item = body["items"][0]
+        content_by_date = {row[0]: row[4] for row in ENTRIES}
+        self.assertEqual(item["content"], content_by_date[item["date"]])
 
     def test_query_validation_uses_fastapi_detail_contract(self):
         response = self.client.get("/api/entries", params={"month": 13, "page": 0})

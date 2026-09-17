@@ -95,6 +95,12 @@ class SearchResult(EntryPreview):
     pass
 
 
+class RandomDayItem(EntryPreview):
+    """随机一天中的单条日记（含完整正文，供随机页直接展示）"""
+
+    content: str
+
+
 class RandomDayResponse(BaseModel):
     """随机一天的日记响应（该日期的全部条目）"""
 
@@ -103,7 +109,7 @@ class RandomDayResponse(BaseModel):
     month: int
     day: int
     total: int
-    items: List[OnThisDayItem]
+    items: List[RandomDayItem]
 
 
 class SummaryItem(BaseModel):

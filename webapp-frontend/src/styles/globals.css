@@ -171,6 +171,35 @@ button {
 .badge.stale {
   background: #f3d7d3;
 }
+.filters .hint {
+  flex-basis: 100%;
+  color: #7c7468;
+  font-size: 13px;
+}
+.filters .clear {
+  align-self: center;
+  color: var(--accent);
+  font-size: 14px;
+}
+.filters input[type='date'] {
+  min-width: 170px;
+}
+.quick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 4px 0 10px;
+}
+.quick button {
+  background: #fffdf8;
+  color: var(--accent);
+  border: 1px solid var(--line);
+}
+.card .content {
+  margin-top: 12px;
+  padding: 16px;
+  line-height: 1.9;
+}
 @media (max-width: 680px) {
   .topbar {
     align-items: flex-start;

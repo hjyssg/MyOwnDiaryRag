@@ -20,13 +20,22 @@ export function RandomPage() {
       ) : (
         data && (
           <>
-            <h2>{data.date}</h2>
+            <h2>
+              {data.date}
+              <span className="meta">共 {data.total} 篇</span>
+            </h2>
             {data.items.map((e) => (
               <article className="card" key={e.id}>
-                <Link to={`/entries/${e.id}`}>
-                  {e.entry_type} · {e.word_count} 字
-                </Link>
-                <p>{e.preview}</p>
+                <div>
+                  <span className="card-title">{e.date}</span>
+                  <span className="meta">
+                    {e.entry_type} · {e.word_count} 字
+                  </span>
+                </div>
+                <div className="content">{e.content}</div>
+                <small>
+                  <Link to={`/entries/${e.id}`}>查看摘要</Link>
+                </small>
               </article>
             ))}
           </>

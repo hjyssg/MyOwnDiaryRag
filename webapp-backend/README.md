@@ -31,14 +31,19 @@ npm run dev
 
 Vite 将 `/api` 转发到 `127.0.0.1:8000`。筛选状态均保存在 URL query 中。
 
+浏览页默认每页 50 篇（`per_page` 可选 35 / 50 / 100），点进某个年份即可一屏看到 35 篇以上；
+年 / 月筛选是原生输入框 + 原生候选（`datalist`，候选来自 `/api/years` 与 `/api/months?year=`），
+非法值（如月份 13）在前端就被丢弃，不会传给后端。"过去的今天"用原生 `type="date"` 日期框
+（参考年为闰年 2024）并配 `今天 / 前一天 / 后一天` 快捷按钮，URL 仍是 `?month=&day=`。
+
 ## API
 
 - `GET /api/years`
 - `GET /api/months?year=`
 - `GET /api/entries?year=&month=&entry_type=&q=&page=&per_page=`
 - `GET /api/entries/{id}`
-- `GET /api/on-this-day?month=&day=`
-- `GET /api/random`
+- `GET /api/on-this-day?month=&day=`：按年份分组返回该月日的日记（只带 120 字预览）。
+- `GET /api/random`：随机一天；`items[].content` 为该篇**完整正文**（"随机一天"页直接展示全文）。
 - `GET /api/summaries?year=&month=&entry_type=&emotion=&q=&status=&page=&per_page=`
 - `GET /api/summaries/emotions`：情绪标签全集 + 各自条数（供筛选下拉；标签集来自根 `.env`）
 - `GET /api/entries/{id}/summary`

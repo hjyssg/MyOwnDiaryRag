@@ -1,7 +1,9 @@
 import { Form, Link, useSearchParams } from 'react-router-dom'
+import { yearMonthParams } from '../api/filters'
 import { getEmotionLabels, getSummaries } from '../api/summaries'
 import { Pagination } from '../components/Pagination'
 import { EmptyState, ErrorState, LoadingState } from '../components/States'
+import { YearMonthFilter } from '../components/YearMonthFilter'
 import { useApi } from '../hooks/useApi'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 
@@ -9,7 +11,16 @@ export function SummariesPage() {
   useDocumentTitle('日记摘要')
   const [p] = useSearchParams()
   const key = p.toString()
-  const params = Object.fromEntries(p)
+  const { year, month } = yearMonthParams(p)
+  const params = {
+    year,
+    month,
+    entry_type: p.get('entry_type') ?? undefined,
+    emotion: p.get('emotion') ?? undefined,
+    q: p.get('q') ?? undefined,
+    status: p.get('status') ?? 'ok',
+    page: p.get('page') ?? undefined,
+  }
   const { data, error, loading } = useApi((s) => getSummaries(params, s), [key])
   const { data: emotions } = useApi((s) => getEmotionLabels(s), [])
   const currentEmotion = p.get('emotion') ?? ''
@@ -22,8 +33,7 @@ export function SummariesPage() {
     <>
       <h1>日记摘要</h1>
       <Form className="filters">
-        <input name="year" defaultValue={p.get('year') ?? ''} placeholder="年份" />
-        <input name="month" defaultValue={p.get('month') ?? ''} placeholder="月份" />
+        <YearMonthFilter year={p.get('year') ?? ''} month={p.get('month') ?? ''} />
         <input name="entry_type" defaultValue={p.get('entry_type') ?? ''} placeholder="类型" />
         {emotions && (
           <select name="emotion" defaultValue={currentEmotion}>

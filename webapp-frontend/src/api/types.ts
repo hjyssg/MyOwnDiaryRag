@@ -43,13 +43,16 @@ export interface OnThisDayResponse {
   total: number
   groups: { year: number; items: OnThisDayItem[] }[]
 }
+export interface RandomDayItem extends EntryPreview {
+  content: string
+}
 export interface RandomDayResponse {
   date: string
   year: number
   month: number
   day: number
   total: number
-  items: OnThisDayItem[]
+  items: RandomDayItem[]
 }
 export interface SummaryItem {
   entry_key: string | null

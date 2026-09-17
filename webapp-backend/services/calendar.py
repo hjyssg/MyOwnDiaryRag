@@ -7,6 +7,7 @@ from schemas import (
     OnThisDayGroup,
     OnThisDayItem,
     OnThisDayResponse,
+    RandomDayItem,
     RandomDayResponse,
 )
 
@@ -56,5 +57,5 @@ def get_random_day(db: Database) -> RandomDayResponse | None:
         month=selected_day["month"],
         day=selected_day["day"],
         total=len(entries),
-        items=[OnThisDayItem.model_validate(entry) for entry in entries],
+        items=[RandomDayItem.model_validate(entry) for entry in entries],
     )
