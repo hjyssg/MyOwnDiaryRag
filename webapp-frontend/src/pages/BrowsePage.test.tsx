@@ -95,9 +95,12 @@ describe('浏览页分页与筛选', () => {
     expect(entriesCall).not.toContain('month=')
   })
 
-  it('完整正文模式请求全文接口、显示正文且不显示分页', async () => {
+  it('完整正文模式也走分页：只请求一页全文并显示分页器', async () => {
     const fullEntries = {
-      total: 1,
+      total: 123,
+      page: 1,
+      per_page: 50,
+      pages: 3,
       items: [{ ...entriesPage.items[0], content: '这是完整日记正文。' }],
       year: 2024,
       month: 9,
@@ -122,13 +125,62 @@ describe('浏览页分页与筛选', () => {
     expect(await screen.findByText('这是完整日记正文。')).toBeInTheDocument()
     expect(calls.some((url) => url.includes('/api/entries/full?'))).toBe(true)
     expect(calls.some((url) => url.includes('/api/entries?') && !url.includes('/full'))).toBe(false)
-    expect(screen.queryByText('第 1–50 篇 / 共 123 篇')).not.toBeInTheDocument()
-    expect(screen.getByText('共 1 篇完整日记')).toBeInTheDocument()
+
+    const fullCall = calls.find((url) => url.includes('/api/entries/full?'))
+    const fullParams = new URLSearchParams(fullCall?.split('?')[1] ?? '')
+    expect(fullParams.get('per_page')).toBe('50')
+    expect(fullParams.get('page')).toBeNull()
+
+    expect(screen.getByText('第 1–50 篇 / 共 123 篇完整日记')).toBeInTheDocument()
+    const pager = screen.getByRole('navigation', { name: '分页' })
+    expect(pager).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '下一页' })).toHaveAttribute(
+      'href',
+      '/browse?year=2024&month=9&full=1&page=2',
+    )
+  })
+
+  it('完整正文模式翻页时带着 page 与 per_page 请求全文', async () => {
+    const fullEntries = {
+      total: 123,
+      page: 2,
+      per_page: 100,
+      pages: 2,
+      items: [{ ...entriesPage.items[0], content: '第二页的完整正文。' }],
+      year: 2024,
+      month: null,
+      entry_type: null,
+      query: null,
+    }
+    const calls: string[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL) => {
+        const url = String(input)
+        calls.push(url)
+        return Promise.resolve(new Response(JSON.stringify(fullEntries)))
+      }),
+    )
+    renderPage('/browse?year=2024&full=1&per_page=100&page=2')
+
+    expect(await screen.findByText('第二页的完整正文。')).toBeInTheDocument()
+    const fullCall = calls.find((url) => url.includes('/api/entries/full?'))
+    const fullParams = new URLSearchParams(fullCall?.split('?')[1] ?? '')
+    expect(fullParams.get('page')).toBe('2')
+    expect(fullParams.get('per_page')).toBe('100')
+    expect(screen.getByText('第 101–123 篇 / 共 123 篇完整日记')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '上一页' })).toHaveAttribute(
+      'href',
+      '/browse?year=2024&full=1&per_page=100&page=1',
+    )
   })
 
   it('切换完整正文开关后立即请求全文接口，无需提交搜索表单', async () => {
     const fullEntries = {
       total: 1,
+      page: 1,
+      per_page: 50,
+      pages: 1,
       items: [{ ...entriesPage.items[0], content: '切换后立即显示的完整正文。' }],
       year: 2024,
       month: null,
@@ -157,8 +209,10 @@ describe('浏览页分页与筛选', () => {
     expect(await screen.findByText('切换后立即显示的完整正文。')).toBeInTheDocument()
     const fullCall = calls.find((url) => url.includes('/api/entries/full?'))
     expect(fullCall).toBeDefined()
-    expect(fullCall).toContain('year=2024')
-    expect(fullCall).not.toContain('page=2')
+    const fullParams = new URLSearchParams(fullCall?.split('?')[1] ?? '')
+    expect(fullParams.get('year')).toBe('2024')
+    expect(fullParams.get('page')).toBeNull()
+    expect(fullParams.get('per_page')).toBe('50')
   })
 
   it('开关是独立控件：不继承筛选输入框的尺寸类名', async () => {
@@ -170,6 +224,24 @@ describe('浏览页分页与筛选', () => {
     expect(toggle).toHaveClass('switch-input')
     expect(toggle.closest('label')).toHaveClass('switch')
     expect(toggle).not.toHaveAttribute('placeholder')
+  })
+
+  it('筛选栏固定为两行：条件一行、操作一行，且不再显示多余提示', async () => {
+    stubFetch()
+    renderPage('/browse?year=2024')
+
+    await screen.findByText('旅行与朋友聚会')
+    const rows = document.querySelectorAll('.filters-rows > .filter-row')
+    expect(rows).toHaveLength(2)
+    const [conditions, actions] = Array.from(rows)
+    expect(conditions.querySelectorAll('input, select')).toHaveLength(4)
+    expect(conditions.querySelector('input[name="year"]')).toBeInTheDocument()
+    expect(conditions.querySelector('input[name="month"]')).toBeInTheDocument()
+    expect(conditions.querySelector('select[name="entry_type"]')).toBeInTheDocument()
+    expect(actions.querySelector('select[name="per_page"]')).toBeInTheDocument()
+    expect(actions.querySelector('input[name="full"]')).toBeInTheDocument()
+    expect(actions.querySelectorAll('button')).toHaveLength(2)
+    expect(screen.queryByText(/留空表示不筛选/)).not.toBeInTheDocument()
   })
 
   it('清除筛选按钮清空全部查询参数并回到未筛选列表', async () => {
@@ -196,6 +268,9 @@ describe('浏览页分页与筛选', () => {
   it('清除筛选按钮在完整正文模式下同时关闭开关', async () => {
     const fullEntries = {
       total: 1,
+      page: 1,
+      per_page: 50,
+      pages: 1,
       items: [{ ...entriesPage.items[0], content: '完整正文内容。' }],
       year: 2024,
       month: null,

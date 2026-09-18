@@ -64,9 +64,12 @@ class FullEntry(EntryPreview):
 
 
 class FullEntryListResponse(BaseModel):
-    """全文浏览响应：按筛选条件返回全部匹配项，不分页。"""
+    """全文浏览响应：与列表接口同一分页契约，避免一次返回整库正文。"""
 
     total: int
+    page: int
+    per_page: int
+    pages: int
     items: List[FullEntry]
     year: Optional[int] = None
     month: Optional[int] = None

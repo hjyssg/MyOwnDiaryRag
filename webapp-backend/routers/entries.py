@@ -41,11 +41,21 @@ def api_full_entries(
     month: Optional[int] = Query(default=None, ge=1, le=12),
     entry_type: Optional[str] = Query(default=None),
     q: Optional[str] = Query(default=None),
+    page: int = Query(default=1, ge=1),
+    per_page: int = Query(default=20, ge=1, le=100),
     db: Database = Depends(get_database),
 ) -> FullEntryListResponse:
-    """全文浏览：按当前筛选条件返回全部匹配日记，不分页。"""
+    """全文浏览：按当前筛选条件分页返回日记全文（契约与 /api/entries 一致）。"""
 
-    return list_full_entries(db, year=year, month=month, entry_type=entry_type, query=q)
+    return list_full_entries(
+        db,
+        year=year,
+        month=month,
+        entry_type=entry_type,
+        query=q,
+        page=page,
+        per_page=per_page,
+    )
 
 
 @router.get("/entries/{entry_id}", response_model=EntryDetail)

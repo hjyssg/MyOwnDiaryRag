@@ -120,15 +120,27 @@ class WebApiTests(unittest.TestCase):
         self.assertEqual(body["query"], "旅行")
         self.assertEqual(body["items"][0]["date"], "2024-09-17")
 
-    def test_full_entries_returns_all_matching_content_without_pagination(self):
-        response = self.client.get("/api/entries/full", params={"year": 2024, "month": 9})
+    def test_full_entries_keeps_pagination_and_returns_content(self):
+        response = self.client.get(
+            "/api/entries/full",
+            params={"year": 2024, "month": 9, "page": 1, "per_page": 1},
+        )
 
         self.assertEqual(response.status_code, 200)
         body = response.json()
-        self.assertEqual(body["total"], 2)
-        self.assertEqual([item["date"] for item in body["items"]], ["2024-09-18", "2024-09-17"])
+        self.assertEqual(
+            {key: body[key] for key in ("total", "page", "per_page", "pages")},
+            {"total": 2, "page": 1, "per_page": 1, "pages": 2},
+        )
+        self.assertEqual([item["date"] for item in body["items"]], ["2024-09-18"])
         self.assertEqual(body["items"][0]["content"], "工作记录")
-        self.assertNotIn("page", body)
+
+        second_page = self.client.get(
+            "/api/entries/full",
+            params={"year": 2024, "month": 9, "page": 2, "per_page": 1},
+        ).json()
+        self.assertEqual([item["date"] for item in second_page["items"]], ["2024-09-17"])
+        self.assertEqual(second_page["items"][0]["content"], "旅行与朋友聚会")
 
     def test_entries_empty_and_out_of_range_page_keep_pagination_shape(self):
         response = self.client.get("/api/entries", params={"q": "不存在", "page": 3})

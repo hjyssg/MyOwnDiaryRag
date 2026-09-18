@@ -20,6 +20,9 @@ export interface FullEntry extends EntryPreview {
 }
 export interface FullEntryListResponse {
   total: number
+  page: number
+  per_page: number
+  pages: number
   items: FullEntry[]
   year: number | null
   month: number | null

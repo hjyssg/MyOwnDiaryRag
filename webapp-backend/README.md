@@ -45,6 +45,8 @@ DATABASE_PATH="$(pwd)/data/demo_diary.db" python webapp-backend/app.py
 `--output /path/to/demo_diary.db`。
 
 浏览页默认每页 50 篇（`per_page` 可选 35 / 50 / 100），点进某个年份即可一屏看到 35 篇以上；
+“显示完整正文”开关切到全文模式后**仍然分页**（`/api/entries/full` 与列表接口同一分页契约，
+只多返回 `content`），不会一次把整库正文拉回浏览器。
 年 / 月筛选是原生输入框 + 原生候选（`datalist`，候选来自 `/api/years` 与 `/api/months?year=`），
 非法值（如月份 13）在前端就被丢弃，不会传给后端。"过去的今天"用原生 `type="date"` 日期框
 （参考年为闰年 2024）并配 `今天 / 前一天 / 后一天` 快捷按钮，URL 仍是 `?month=&day=`。
@@ -54,8 +56,8 @@ DATABASE_PATH="$(pwd)/data/demo_diary.db" python webapp-backend/app.py
 - `GET /api/years`
 - `GET /api/months?year=`
 - `GET /api/entries?year=&month=&entry_type=&q=&page=&per_page=`
-- `GET /api/entries/full?year=&month=&entry_type=&q=`：按筛选条件返回所有匹配日记的完整正文，不分页；
-  适用于浏览页“显示完整正文”模式，大范围查询可能产生较大响应。
+- `GET /api/entries/full?year=&month=&entry_type=&q=&page=&per_page=`：与 `/api/entries` 同一分页契约，
+  只是每项多带 `content` 全文；浏览页“显示完整正文”模式也按页加载（默认 `per_page=20`、上限 100）。
 - `GET /api/entries/{id}`
 - `GET /api/on-this-day?month=&day=`：按年份分组返回该月日的日记（只带 120 字预览）。
 - `GET /api/random`：随机一天；`items[].content` 为该篇**完整正文**（"随机一天"页直接展示全文）。

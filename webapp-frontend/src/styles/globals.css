@@ -155,6 +155,17 @@ h2 {
   border-radius: 6px;
   background: rgba(252, 253, 254, 0.75);
 }
+/* 固定两行布局（浏览页）：行内再换行，行与行不互相穿插，按钮不会在行间跳动 */
+.filters-rows {
+  flex-direction: column;
+  align-items: stretch;
+}
+.filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+  align-items: center;
+}
 .filters input:not([type='checkbox']),
 .filters select {
   min-width: 92px;
@@ -195,10 +206,9 @@ button {
   border-color: #7694ac;
   background: var(--accent-soft);
 }
-.filters .hint {
-  flex-basis: 100%;
-  color: var(--muted);
-  font-size: 11px;
+/* 搜索按钮钉在行尾：第二行有没有"每页"下拉框都不会改变按钮位置 */
+.filters .search {
+  margin-left: auto;
 }
 .quick {
   display: flex;
@@ -1032,6 +1042,13 @@ button {
   }
   .filters {
     align-items: stretch;
+  }
+  .filters-rows .filter-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .filters .search {
+    margin-left: 0;
   }
   .filters input:not([type='checkbox']),
   .filters select {

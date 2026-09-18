@@ -63,12 +63,32 @@ def list_full_entries(
     month: Optional[int] = None,
     entry_type: Optional[str] = None,
     query: Optional[str] = None,
+    page: int = 1,
+    per_page: int = 20,
 ) -> FullEntryListResponse:
-    """按浏览筛选条件返回全部全文；调用方负责提示大结果集的加载成本。"""
+    """按浏览筛选条件分页返回全文；与列表接口共用同一分页契约。"""
+
     normalized_query = normalize_query(query)
-    items = db.full_entries(year=year, month=month, entry_type=entry_type, query=normalized_query)
+    items = db.full_entries(
+        year=year,
+        month=month,
+        entry_type=entry_type,
+        query=normalized_query,
+        page=page,
+        per_page=per_page,
+    )
+    total = db.count_entries(
+        year=year,
+        month=month,
+        entry_type=entry_type,
+        query=normalized_query,
+    )
+    pages = max(1, (total + per_page - 1) // per_page)
     return FullEntryListResponse(
-        total=len(items),
+        total=total,
+        page=page,
+        per_page=per_page,
+        pages=pages,
         items=items,
         year=year,
         month=month,

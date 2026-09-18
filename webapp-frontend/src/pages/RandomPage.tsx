@@ -22,9 +22,6 @@ export function RandomPage() {
       ) : (
         data && (
           <section className="random-memory">
-            <span className="random-symbol" aria-hidden="true">
-              ⌁
-            </span>
             <h2>{data.date}</h2>
             <p>那一天，你写了 {data.total} 篇日记。</p>
             <button onClick={() => setNonce((n) => n + 1)}>再来一次 ↻</button>

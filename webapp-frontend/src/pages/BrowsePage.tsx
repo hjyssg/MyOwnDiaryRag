@@ -61,19 +61,19 @@ export function BrowsePage() {
     (s) => (fullMode ? getFullEntries(params, s) : Promise.resolve(undefined)),
     [key, fullMode],
   )
-  const rangeStart = preview.data ? (preview.data.page - 1) * preview.data.per_page + 1 : 1
-  const rangeEnd = preview.data
-    ? Math.min(preview.data.page * preview.data.per_page, preview.data.total)
-    : 0
-  const previewGroups = preview.data ? groupByMonth(preview.data.items) : []
-  const fullGroups = full.data ? groupByMonth<FullEntry>(full.data.items) : []
   const data = fullMode ? full.data : preview.data
   const error = fullMode ? full.error : preview.error
   const loading = fullMode ? full.loading : preview.loading
+  /** 全文模式与预览模式共用同一分页契约，区间文案与分页器都用当前 data 计算 */
+  const rangeStart = data ? (data.page - 1) * data.per_page + 1 : 1
+  const rangeEnd = data ? Math.min(data.page * data.per_page, data.total) : 0
+  const previewGroups = !fullMode && preview.data ? groupByMonth(preview.data.items) : []
+  const fullGroups = fullMode && full.data ? groupByMonth<FullEntry>(full.data.items) : []
   const toggleFullMode = (checked: boolean) => {
     const next = new URLSearchParams(p)
     if (checked) next.set('full', '1')
     else next.delete('full')
+    // 切换全文 / 预览会改变数据集，回到第 1 页（每页条数保留）
     next.delete('page')
     setSearchParams(next)
   }
@@ -84,33 +84,35 @@ export function BrowsePage() {
       <header className="page-intro">
         <h1>浏览日记</h1>
       </header>
-      <Form className="filters">
+      <Form className="filters filters-rows">
         {/* 输入框保持非受控，但用 URL 值做 key：提交 / 清除筛选后输入框回填为当前生效值 */}
-        <YearMonthFilter
-          key={`year:${p.get('year') ?? ''}-month:${p.get('month') ?? ''}`}
-          year={p.get('year') ?? ''}
-          month={p.get('month') ?? ''}
-        />
-        <select
-          name="entry_type"
-          key={`entry_type:${p.get('entry_type') ?? ''}`}
-          defaultValue={p.get('entry_type') ?? ''}
-        >
-          <option value="">全部类型</option>
-          {ENTRY_TYPES.map(([value, label]) => (
-            <option key={value} value={value}>
-              {label}
-            </option>
-          ))}
-        </select>
-        <input
-          name="q"
-          key={`q:${p.get('q') ?? ''}`}
-          defaultValue={p.get('q') ?? ''}
-          placeholder="搜索日记内容…"
-          aria-label="搜索正文"
-        />
-        {!fullMode && (
+        <div className="filter-row">
+          <YearMonthFilter
+            key={`year:${p.get('year') ?? ''}-month:${p.get('month') ?? ''}`}
+            year={p.get('year') ?? ''}
+            month={p.get('month') ?? ''}
+          />
+          <select
+            name="entry_type"
+            key={`entry_type:${p.get('entry_type') ?? ''}`}
+            defaultValue={p.get('entry_type') ?? ''}
+          >
+            <option value="">全部类型</option>
+            {ENTRY_TYPES.map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+          <input
+            name="q"
+            key={`q:${p.get('q') ?? ''}`}
+            defaultValue={p.get('q') ?? ''}
+            placeholder="搜索日记内容…"
+            aria-label="搜索正文"
+          />
+        </div>
+        <div className="filter-row">
           <select
             name="per_page"
             key={`per_page:${p.get('per_page') ?? DEFAULT_PER_PAGE}`}
@@ -122,15 +124,14 @@ export function BrowsePage() {
               </option>
             ))}
           </select>
-        )}
-        <Switch name="full" checked={fullMode} onChange={toggleFullMode}>
-          显示完整正文
-        </Switch>
-        <button>搜索</button>
-        <button type="button" className="clear" onClick={clearFilters}>
-          清除筛选
-        </button>
-        <small className="hint">留空表示不筛选；年份填写 4 位数字，月份填写 1–12。</small>
+          <Switch name="full" checked={fullMode} onChange={toggleFullMode}>
+            显示完整正文
+          </Switch>
+          <button className="search">搜索</button>
+          <button type="button" className="clear" onClick={clearFilters}>
+            清除筛选
+          </button>
+        </div>
       </Form>
       {loading ? (
         <LoadingState />
@@ -141,9 +142,7 @@ export function BrowsePage() {
       ) : (
         <>
           <p className="list-meta">
-            {fullMode
-              ? `共 ${data.total} 篇完整日记`
-              : `第 ${rangeStart}–${rangeEnd} 篇 / 共 ${data.total} 篇`}
+            第 {rangeStart}–{rangeEnd} 篇 / 共 {data.total} 篇{fullMode ? '完整日记' : ''}
           </p>
           {fullMode
             ? fullGroups.map((group) => (
@@ -171,9 +170,8 @@ export function BrowsePage() {
                   ))}
                 </section>
               ))}
-          {!fullMode && preview.data && (
-            <Pagination page={preview.data.page} pages={preview.data.pages} />
-          )}
+          {/* 全文模式也分页：一次只加载一页正文，翻页沿用当前筛选与每页条数 */}
+          <Pagination page={data.page} pages={data.pages} />
         </>
       )}
     </div>

@@ -197,16 +197,20 @@ class Database:
         month: Optional[int] = None,
         entry_type: Optional[str] = None,
         query: Optional[str] = None,
+        page: int = 1,
+        per_page: int = 20,
     ) -> List[dict]:
-        """按浏览筛选条件读取全部匹配日记全文，不分页。"""
+        """按浏览筛选条件分页读取匹配日记全文（含预览），避免一次拉回整库正文。"""
         conn = self._connect()
         try:
             params: List = []
             where = self._build_where(year, month, entry_type, query, params)
+            offset = (page - 1) * per_page
             rows = conn.execute(
                 f"""SELECT id, date, year, month, day, entry_type, word_count, content, file_source
-                    FROM diary_entries{where} ORDER BY date DESC, id DESC""",
-                params,
+                    FROM diary_entries{where} ORDER BY date DESC, id DESC
+                    LIMIT ? OFFSET ?""",
+                (*params, per_page, offset),
             ).fetchall()
             result = []
             for row in rows:

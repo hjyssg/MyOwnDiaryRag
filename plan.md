@@ -178,3 +178,35 @@ cd webapp-frontend && npm run dev       # 终端 2
 - `/api/entries` 默认 `per_page` 仍为 20（仅浏览页前端传 50）；摘要页页大小不在本次范围。
 - `on-this-day` 仍只显示 120 字预览（正文点进详情页），本次不改成全文。
 
+---
+
+## 任务 E（新增）：`browse?full=1` 回归分页
+
+**根因**：`/api/entries/full` 原先按筛选条件 `SELECT` 全部匹配行并一次性返回
+（`database.py::full_entries` 无 LIMIT、`services/entries.py::list_full_entries` 用 `total=len(items)`），
+`BrowsePage` 全文模式又隐藏了 `per_page` 选择器与 `Pagination`；`?year=2025&full=1` 会一次拉回 522 篇正文。
+
+### 改动
+1. `database.py::full_entries`：加 `page` / `per_page`，SQL 补 `LIMIT ? OFFSET ?`（与 `entries()` 一致）。
+2. `webapp-backend/services/entries.py::list_full_entries`：加 `page` / `per_page`，复用
+   `db.count_entries()` 计算 `total` 与 `pages = max(1, ceil(total / per_page))`。
+3. `webapp-backend/schemas.py::FullEntryListResponse`：补 `page` / `per_page` / `pages`，契约与
+   `EntryListResponse` 完全对齐（`items` 仍多带 `content` / `file_source`）。
+4. `webapp-backend/routers/entries.py::api_full_entries`：接收 `page`（默认 1）与 `per_page`
+   （默认 20、上限 100），与 `/api/entries` 参数一致。
+5. 前端 `src/api/types.ts::FullEntryListResponse`：补分页字段。
+6. 前端 `src/pages/BrowsePage.tsx`：
+   - “每页”选择器不再在全文模式隐藏；区间文案与 `Pagination` 统一按当前 `data` 计算
+     （`第 101–123 篇 / 共 123 篇完整日记`）；
+   - 全文模式翻页沿用 URL 里的 `page` / `per_page`，切换开关仍回到第 1 页（`toggleFullMode` 保留原有行为）。
+7. `tests/test_web_api.py`：`test_full_entries_keeps_pagination_and_returns_content`
+   （`per_page=1` 断言 `total/page/per_page/pages = 2/1/1/2`，第 1、2 页分别返回 09-18、09-17 且带全文）。
+
+### 验收（已实测）
+- 后端 `python -m unittest discover -s tests`：**160 tests OK**。
+- 前端 `npx vitest run`：8 文件 / **22 tests passed**；`npm run lint`、`npm run typecheck` 通过。
+- 真实库 `diary_database.db`：`/api/entries/full?year=2025&page=11&per_page=50` →
+  `200`，`total=522 / page=11 / per_page=50 / pages=11`，该页 22 条（最后一条 `2025-01-18`），
+  响应当页只含 50 篇正文，不再整库返回。
+
+
