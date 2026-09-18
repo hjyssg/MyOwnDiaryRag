@@ -22,10 +22,17 @@ export function RandomPage() {
       ) : (
         data && (
           <section className="random-memory">
-            <h2>{data.date}</h2>
-            <p>那一天，你写了 {data.total} 篇日记。</p>
-            <button onClick={() => setNonce((n) => n + 1)}>再来一次 ↻</button>
-            <div className="random-entries">
+            <header className="random-bar">
+              <h2>
+                <time dateTime={data.date}>{data.date}</time>
+              </h2>
+              <p>那一天，你写了 {data.total} 篇日记。</p>
+              <button type="button" onClick={() => setNonce((n) => n + 1)}>
+                再来一次 ↻
+              </button>
+            </header>
+            {/* 只有一篇时不再限制高度，直接铺开展示全文 */}
+            <div className={data.total === 1 ? 'random-entries single' : 'random-entries'}>
               {data.items.map((entry) => (
                 <article key={entry.id}>
                   <header>

@@ -559,33 +559,42 @@ button {
 .random-page {
   max-width: 700px;
 }
+/* 随机回忆：去掉卡片边框 / 背景，只留一行紧凑 meta + 「再来一次」按钮，突出正文 */
 .random-memory {
-  margin-top: 25px;
-  padding: 32px 28px 24px;
-  border: 1px solid var(--line);
-  border-radius: 5px;
-  text-align: center;
+  margin-top: 6px;
 }
-.random-symbol {
-  color: #31658d;
-  font-size: 36px;
+.random-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  align-items: baseline;
+  padding-bottom: 11px;
+  border-bottom: 1px solid var(--line);
 }
-.random-memory h2 {
-  margin: 12px 0 0;
-  font-size: 27px;
+.random-bar h2 {
+  margin: 0;
+  font-size: 22px;
+  line-height: 1.2;
+  letter-spacing: 0.02em;
 }
-.random-memory > p {
-  margin: 0 0 18px;
+.random-bar p {
+  margin: 0;
   color: var(--muted);
-  font-size: 14px;
+  font-size: 12.5px;
+}
+.random-bar button {
+  margin-left: auto;
+  padding: 5px 11px;
+  border-color: var(--line);
+  background: transparent;
+  color: var(--accent);
+  font-size: 12px;
 }
 .random-entries {
-  margin-top: 27px;
-  border-top: 1px solid var(--line);
   text-align: left;
 }
 .random-entries article {
-  padding: 18px 0;
+  padding: 16px 0;
   border-bottom: 1px solid var(--line);
 }
 .random-entries header {
@@ -610,6 +619,13 @@ button {
   color: #42647e;
   font-size: 12px;
   text-decoration: none;
+}
+/* 单篇日记：不截断、不内滚，直接用阅读版字号铺开展示全文 */
+.random-entries.single .content {
+  max-height: none;
+  overflow: visible;
+  margin: 9px 0 4px;
+  font: 16px/2.05 var(--serif);
 }
 .summary-overview {
   display: grid;
@@ -1063,8 +1079,11 @@ button {
   .reflection-intro {
     margin-bottom: 15px;
   }
-  .random-memory {
-    padding: 25px 18px;
+  .random-bar h2 {
+    font-size: 20px;
+  }
+  .random-entries.single .content {
+    font-size: 15px;
   }
   .summary-overview,
   .summary-item,

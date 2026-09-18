@@ -3,19 +3,19 @@ import { createMemoryRouter, RouterProvider } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { RandomPage } from './RandomPage'
 
-const day = {
-  date: '2023-09-17',
-  year: 2023,
-  month: 9,
-  day: 17,
+const singleDay = {
+  date: '2026-04-16',
+  year: 2026,
+  month: 4,
+  day: 16,
   total: 1,
   items: [
     {
       id: 7,
-      date: '2023-09-17',
-      year: 2023,
-      month: 9,
-      day: 17,
+      date: '2026-04-16',
+      year: 2026,
+      month: 4,
+      day: 16,
       entry_type: 'diary',
       word_count: 6,
       preview: '旧年旅行记录…',
@@ -24,14 +24,46 @@ const day = {
   ],
 }
 
-function stubFetch() {
+const multiDay = {
+  date: '2026-04-16',
+  year: 2026,
+  month: 4,
+  day: 16,
+  total: 2,
+  items: [
+    {
+      id: 7,
+      date: '2026-04-16',
+      year: 2026,
+      month: 4,
+      day: 16,
+      entry_type: 'diary',
+      word_count: 6,
+      preview: '第一篇预览…',
+      content: '第一篇的完整正文。',
+    },
+    {
+      id: 8,
+      date: '2026-04-16',
+      year: 2026,
+      month: 4,
+      day: 16,
+      entry_type: 'diary',
+      word_count: 6,
+      preview: '第二篇预览…',
+      content: '第二篇的完整正文。',
+    },
+  ],
+}
+
+function stubFetch(payload: typeof singleDay | typeof multiDay) {
   const calls: string[] = []
   vi.stubGlobal(
     'fetch',
     vi.fn((input: RequestInfo | URL) => {
       calls.push(String(input))
       return Promise.resolve(
-        new Response(JSON.stringify(day), {
+        new Response(JSON.stringify(payload), {
           status: 200,
           headers: { 'Content-Type': 'application/json' },
         }),
@@ -53,13 +85,32 @@ function renderPage() {
 afterEach(() => vi.restoreAllMocks())
 
 describe('随机一天', () => {
-  it('直接展示全文而不是预览', async () => {
-    const calls = stubFetch()
+  it('只有一篇时直接展示全文，不再放进限高的滚动框', async () => {
+    const calls = stubFetch(singleDay)
     renderPage()
 
-    expect(
-      await screen.findByText('旧年旅行记录：这是完整的正文内容，不是 120 字预览。'),
-    ).toBeInTheDocument()
+    const content = await screen.findByText('旧年旅行记录：这是完整的正文内容，不是 120 字预览。')
+    expect(content).toBeInTheDocument()
+    expect(content.closest('.random-entries')).toHaveClass('single')
     expect(calls.filter((url) => url.includes('/api/random'))).toHaveLength(1)
+  })
+
+  it('顶部只有一行紧凑 meta：日期 + 篇数 + 再来一次', async () => {
+    stubFetch(singleDay)
+    renderPage()
+
+    const meta = await screen.findByText('那一天，你写了 1 篇日记。')
+    expect(meta.closest('.random-bar')).not.toBeNull()
+    expect(screen.getByText('2026-04-16').closest('.random-bar')).not.toBeNull()
+    expect(screen.getByRole('button', { name: '再来一次 ↻' })).toBeInTheDocument()
+  })
+
+  it('多篇时仍走列表形态（不带 single）', async () => {
+    stubFetch(multiDay)
+    renderPage()
+
+    const content = await screen.findByText('第一篇的完整正文。')
+    expect(content.closest('.random-entries')).not.toHaveClass('single')
+    expect(screen.getByText('第二篇的完整正文。')).toBeInTheDocument()
   })
 })
