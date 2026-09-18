@@ -76,6 +76,7 @@ function renderPage() {
   const router = createMemoryRouter(
     [
       { path: '/random', element: <RandomPage /> },
+      { path: '/on-this-day', element: <div>日期查找</div> },
       { path: '/entries/:id', element: <div>原文</div> },
     ],
     { initialEntries: ['/random'] },
@@ -112,5 +113,13 @@ describe('随机一天', () => {
     const content = await screen.findByText('第一篇的完整正文。')
     expect(content.closest('.random-entries')).not.toHaveClass('single')
     expect(screen.getByText('第二篇的完整正文。')).toBeInTheDocument()
+  })
+
+  it('点日期进入「日期查找」页，并带上该日期的月 / 日参数', async () => {
+    stubFetch(singleDay)
+    renderPage()
+
+    const link = await screen.findByRole('link', { name: '2026-04-16' })
+    expect(link).toHaveAttribute('href', '/on-this-day?month=4&day=16')
   })
 })

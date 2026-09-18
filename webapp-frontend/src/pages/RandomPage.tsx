@@ -24,7 +24,12 @@ export function RandomPage() {
           <section className="random-memory">
             <header className="random-bar">
               <h2>
-                <time dateTime={data.date}>{data.date}</time>
+                <Link
+                  to={`/on-this-day?month=${data.month}&day=${data.day}`}
+                  title="看这一天的历史记录"
+                >
+                  <time dateTime={data.date}>{data.date}</time>
+                </Link>
               </h2>
               <p>那一天，你写了 {data.total} 篇日记。</p>
               <button type="button" onClick={() => setNonce((n) => n + 1)}>

@@ -22,7 +22,7 @@ function shiftDate(month: number, day: number, delta: number) {
 }
 
 export function OnThisDayPage() {
-  useDocumentTitle('过去的今天')
+  useDocumentTitle('日期查找')
   const [p, setSearchParams] = useSearchParams()
   const now = new Date()
   const rawMonth = Number(p.get('month'))
@@ -50,7 +50,7 @@ export function OnThisDayPage() {
     <div className="on-this-day-page">
       <header className="page-intro reflection-intro">
         <div>
-          <h1>过去的今天</h1>
+          <h1>日期查找</h1>
         </div>
         <time>
           {month}月<br />

@@ -542,7 +542,7 @@ button {
 .memory-timeline {
   margin-top: 18px;
 }
-/* “过去的今天”按年份分组：竖线用 border-left，不再需要空的装饰 div */
+/* “日期查找”按年份分组：竖线用 border-left，不再需要空的装饰 div */
 .memory-year {
   margin-top: 22px;
 }
@@ -576,6 +576,16 @@ button {
   font-size: 22px;
   line-height: 1.2;
   letter-spacing: 0.02em;
+}
+/* 日期本身是入口：点进“日期查找”看该月日在各年份的记录 */
+.random-bar h2 a {
+  color: inherit;
+  text-decoration: none;
+}
+.random-bar h2 a:hover {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 .random-bar p {
   margin: 0;

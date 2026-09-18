@@ -359,7 +359,7 @@ class Database:
         finally:
             conn.close()
 
-    # ---------------- 过去的今天 ----------------
+    # ---------------- 日期查找 ----------------
 
     def on_this_day(self, month: int, day: int) -> List[dict]:
         """查询所有年份中某月日的日记条目（按年份升序）"""

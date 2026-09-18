@@ -1,6 +1,7 @@
 import { Form, Link, useSearchParams } from 'react-router-dom'
 import { yearMonthParams } from '../api/filters'
 import { getEmotionLabels, getSummaries } from '../api/summaries'
+import { EntryTypeFilter } from '../components/EntryTypeFilter'
 import { Pagination } from '../components/Pagination'
 import { EmptyState, ErrorState, LoadingState } from '../components/States'
 import { YearMonthFilter } from '../components/YearMonthFilter'
@@ -44,7 +45,7 @@ export function SummariesPage() {
       </header>
       <Form className="filters">
         <YearMonthFilter year={p.get('year') ?? ''} month={p.get('month') ?? ''} />
-        <input name="entry_type" defaultValue={p.get('entry_type') ?? ''} placeholder="类型" />
+        <EntryTypeFilter value={p.get('entry_type') ?? ''} />
         {emotions && (
           <select name="emotion" defaultValue={currentEmotion}>
             <option value="">全部情绪</option>

@@ -83,4 +83,22 @@ describe('摘要页情绪筛选', () => {
     expect(select.value).toBe('生气')
     expect(calls.some((url) => url.includes('emotion='))).toBe(true)
   })
+  it('类型下拉与浏览页同款（同一个 EntryTypeFilter），并按 URL 回填', async () => {
+    const calls = stubFetch()
+    renderPage('/?entry_type=note')
+    expect(await screen.findByText('被同事甩锅')).toBeInTheDocument()
+
+    const select = document.querySelector('select[name="entry_type"]') as HTMLSelectElement
+    expect(select).not.toBeNull()
+    expect(select.value).toBe('note')
+    expect(Array.from(select.options).map((option) => option.textContent)).toEqual([
+      '全部类型',
+      '普通日记',
+      '股票日记',
+      '回顾',
+      '总结',
+      '随手记',
+    ])
+    expect(calls.some((url) => url.includes('entry_type=note'))).toBe(true)
+  })
 })

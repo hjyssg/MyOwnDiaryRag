@@ -48,7 +48,7 @@ DATABASE_PATH="$(pwd)/data/demo_diary.db" python webapp-backend/app.py
 “显示完整正文”开关切到全文模式后**仍然分页**（`/api/entries/full` 与列表接口同一分页契约，
 只多返回 `content`），不会一次把整库正文拉回浏览器。
 年 / 月筛选是原生输入框 + 原生候选（`datalist`，候选来自 `/api/years` 与 `/api/months?year=`），
-非法值（如月份 13）在前端就被丢弃，不会传给后端。"过去的今天"用原生 `type="date"` 日期框
+非法值（如月份 13）在前端就被丢弃，不会传给后端。"日期查找"用原生 `type="date"` 日期框
 （参考年为闰年 2024）并配 `今天 / 前一天 / 后一天` 快捷按钮，URL 仍是 `?month=&day=`。
 
 ## API

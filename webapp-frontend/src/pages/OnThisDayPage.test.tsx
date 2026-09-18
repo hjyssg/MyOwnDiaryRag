@@ -30,7 +30,7 @@ function renderPage(entry = '/on-this-day?month=2&day=28') {
 }
 afterEach(() => vi.restoreAllMocks())
 
-describe('过去的今天日期选择', () => {
+describe('日期查找日期选择', () => {
   it('原生日期输入按 URL 的月 / 日回填', async () => {
     const calls = stubFetch()
     renderPage()

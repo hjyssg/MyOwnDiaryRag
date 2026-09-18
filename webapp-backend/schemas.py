@@ -133,7 +133,7 @@ class StatisticsResponse(BaseModel):
 
 
 class OnThisDayItem(BaseModel):
-    """过去的今天中的单条日记"""
+    """日期查找中的单条日记"""
 
     id: int
     date: str
@@ -144,14 +144,14 @@ class OnThisDayItem(BaseModel):
 
 
 class OnThisDayGroup(BaseModel):
-    """过去的今天：按年份分组的条目"""
+    """日期查找：按年份分组的条目"""
 
     year: int
     items: List[OnThisDayItem]
 
 
 class OnThisDayResponse(BaseModel):
-    """过去的今天整体响应"""
+    """日期查找整体响应"""
 
     month: int
     day: int

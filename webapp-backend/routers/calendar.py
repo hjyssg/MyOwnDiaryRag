@@ -50,7 +50,7 @@ def api_on_this_day(
     day: int = Query(ge=1, le=31),
     db: Database = Depends(get_database),
 ) -> OnThisDayResponse:
-    """过去的今天：查询每一年同月日的日记。"""
+    """日期查找：查询每一年同月日的日记。"""
 
     try:
         return get_on_this_day(db, month, day)

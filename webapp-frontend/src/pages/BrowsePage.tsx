@@ -3,6 +3,7 @@ import { getEntries, getFullEntries } from '../api/entries'
 import { yearMonthParams } from '../api/filters'
 import type { EntryPreview, FullEntry } from '../api/types'
 import { EntryCard } from '../components/EntryCard'
+import { EntryTypeFilter } from '../components/EntryTypeFilter'
 import { entryTypeLabel } from '../components/entryTypes'
 import { Pagination } from '../components/Pagination'
 import { EmptyState, ErrorState, LoadingState } from '../components/States'
@@ -14,15 +15,6 @@ import { useDocumentTitle } from '../hooks/useDocumentTitle'
 /** 每页条数：默认 50，保证点进某个年份就能一屏看到 35 篇以上 */
 const PAGE_SIZES = [35, 50, 100]
 const DEFAULT_PER_PAGE = 50
-
-/** 日记类型 → 中文标签（取值与 create_diary_db.sql 一致） */
-const ENTRY_TYPES: [string, string][] = [
-  ['diary', '普通日记'],
-  ['stock_diary', '股票日记'],
-  ['retrospective', '回顾'],
-  ['summary', '总结'],
-  ['note', '随手记'],
-]
 
 /** 组装查询参数：年 / 月做范围归一化，非法值不传给后端（避免 422） */
 function buildParams(p: URLSearchParams) {
@@ -92,18 +84,7 @@ export function BrowsePage() {
             year={p.get('year') ?? ''}
             month={p.get('month') ?? ''}
           />
-          <select
-            name="entry_type"
-            key={`entry_type:${p.get('entry_type') ?? ''}`}
-            defaultValue={p.get('entry_type') ?? ''}
-          >
-            <option value="">全部类型</option>
-            {ENTRY_TYPES.map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </select>
+          <EntryTypeFilter value={p.get('entry_type') ?? ''} />
           <input
             name="q"
             key={`q:${p.get('q') ?? ''}`}

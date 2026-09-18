@@ -1,212 +1,147 @@
-# 日记 Web 前端优化计划（browse 分页 / 筛选交互 / 日期输入 / 随机全文）
+# 前端三项调整计划（类型筛选统一 / 日期页更名为「日期查找」 / 随机页日期可点进）
 
 > 约定：后端 SQL 集中在根 `database.py`、`summary_database.py`；router 只管参数与 HTTP 状态，
 > service 组合业务规则；前端页面不直接访问 SQLite，也不散落裸 `fetch`（一律走 `src/api/*`）。
+> 组件复用优先：能抽成组件的筛选控件放 `src/components/`，页面只负责组装查询参数。
 
 ## 0. 现状与根因（动手前已核实）
 
 | 现象 | 证据 |
 | --- | --- |
-| `browse?year=2024` 只显示 20 篇 | 后端默认 `per_page=20`（`webapp-backend/routers/entries.py:22`、`database.py:117`），前端 `BrowsePage.tsx` 从不传 `per_page` |
-| 筛选栏"年 input / 月 select"不一致、不顺手 | `BrowsePage.tsx:19-30`；`SummariesPage.tsx:25-26` 又是两个裸 input，三处风格各不相同 |
-| 提交筛选会丢掉 `page`（期望行为），也会丢 `per_page` | react-router 7.18.4 的 GET `<Form>` 提交时 `search` 由表单字段整体替换（`getFormSubmissionInfo` 中 `parsedPath.search = "?" + searchParams`） |
-| 年 / 月统计接口前端从未使用 | `getMonths()` 定义于 `src/api/entries.ts:13` 但全仓 0 调用；`getYears()` 仅 HomePage 使用 |
-| "随机一天"拿不到全文 | `database.entries_for_date()` 已 SELECT 并保留 `content`（`database.py:227,237`），但 `services/calendar.py:59` 用无 `content` 字段的 `OnThisDayItem` 序列化，被 Pydantic 丢弃 |
-| 不引入 UI 库的前提 | 依赖只有 `react / react-dom / react-router-dom`，样式为手写 `src/styles/globals.css` |
+| 摘要页的"类型"是自由文本输入，和浏览页完全不一致 | `src/pages/SummariesPage.tsx:47` 是 `<input name="entry_type" placeholder="类型" />`；`src/pages/BrowsePage.tsx:95-106` 是闭合 `<select>`（全部类型 / 普通日记 / 股票日记 / 回顾 / 总结 / 随手记）。用户必须在摘要页手打 `stock_diary` 这类内部值，打错就静默零结果 |
+| 年 / 月筛选已经抽成共用组件，类型还没抽 | `src/components/YearMonthFilter.tsx` 被 `BrowsePage.tsx:90` 与 `SummariesPage.tsx:46` 复用；类型下拉目前只有 BrowsePage 内联的那一份 |
+| "过去的今天"这个名字与页面能力不符 | 页面支持任意 `?month=&day=`（`OnThisDayPage.tsx:26-41`），后端 `/api/on-this-day?month=&day=`（`webapp-backend/routers/calendar.py:47-58`）也是"任意月日的历史记录"，并不是只能看今天。同一个名字还出现在：`AppLayout.tsx:19`（左侧导航）、`HomePage.tsx:42-43`（入口卡）、`webapp-backend/README.md:51` |
+| 随机页的日期是死文本，不能跳转 | `RandomPage.tsx:26-28` 只渲染 `<time dateTime>{data.date}</time>`；而它的响应里已带 `month` / `day`（`api/types.ts:94-101`），和 on-this-day 的查询参数天然对齐 |
 
-**UI 组件选型结论（本次不引库）**：实测 `react-day-picker@10.0.1`、`react-datepicker@9.1.0`、
-`antd@6.6.4`、`@rc-component/picker@1.14.0`（原 rc-picker，**无自带 CSS**，脱离 antd 独立使用会没样式）、
-`@mui/x-date-pickers@9.14.0`。本次采用**原生 input + 键盘输入**方案（零依赖、零体积）；
-后续若需要"专业 datepicker"，再按上表升级（首选 `react-day-picker@10`，自带 `zhCN` 与样式）。
+**命名结论（本次采用）**："过去的今天" → **日期查找**。
+理由：这个页面本质是"按日期查找"——选一个(月, 日)，把它在各年份的记录一次查出来；
+`日期查找` 直说动作，不含"今天"这种会误导的词，且是 4 个字，与既有侧栏标签
+（浏览日记 / 随机回忆 / AI 摘要）同构，190px 宽的侧栏（`globals.css:72-83`）单行放得下。
+备选：`同月同日`（描述的是结果形态：同月同日跨年份）、`月日回看`、`那年今日`（若选备选，只需换 B 任务里的文案）。
 
 ---
 
-## 任务 A：`browse?year=` 单页至少 35 篇
+## 任务 A：摘要页的类型筛选改为与浏览页一致的共用组件
 
-**目标**：进入某年列表时默认一页 ≥35 篇，且分页 / 再次筛选后页大小稳定。
+**目标**：两个页面的"类型"控件长得一样、取值一样、行为一样（含"清除筛选 / URL 回填"下的表现），
+且类型选项只有一份定义。
 
-### 改动（已完成）
-1. `src/pages/BrowsePage.tsx`
-   - 常量：`PAGE_SIZES = [35, 50, 100]`、`DEFAULT_PER_PAGE = 50`。
-   - 请求参数注入：`per_page: p.get('per_page') ?? DEFAULT_PER_PAGE`（URL 有则优先）。
-   - 表单新增"每页"`<select name="per_page">`（闭合枚举，用 select 合适），保证提交后写进 URL，
-     `Pagination` 从 `location.search` 复制参数，翻页时页大小保持。
-   - 顶部文案改为区间：`第 1–50 篇 / 共 522 篇`。
-2. 后端**不改**：保留 `/api/entries` 默认 20、上限 100（避免破坏 `tests/test_web_api.py:132`
-   的 `per_page: 20` 契约断言与 `/api/search` 兼容行为）。
+### 改动清单
+1. `src/components/entryTypes.ts`（纯常量模块，非组件文件，不触发 react-refresh 告警）
+   - 新增 `export const entryTypeOptions: [string, string][]`，内容即现在 `BrowsePage.tsx:19-25` 的
+     `ENTRY_TYPES`：`diary=普通日记`、`stock_diary=股票日记`、`retrospective=回顾`、`summary=总结`、`note=随手记`。
+   - 保留 `entryTypeLabel` 不动（它给卡片上的 `.tag` 用短标签：日记 / 股票 / …，与下拉的长标签是两种用途）。
+2. 新增 `src/components/EntryTypeFilter.tsx`
+   ```tsx
+   import { entryTypeOptions } from './entryTypes'
+   /** 日记类型下拉：选项只有一份（entryTypes.ts），browse / summaries 共用。 */
+   export function EntryTypeFilter({ value = '' }: { value?: string }) {
+     return (
+       <select name="entry_type" aria-label="日记类型" key={value} defaultValue={value}>
+         <option value="">全部类型</option>
+         {entryTypeOptions.map(([v, label]) => (
+           <option key={v} value={v}>{label}</option>
+         ))}
+       </select>
+     )
+   }
+   ```
+   - 非受控 + `key={value}`：沿用 `BrowsePage.tsx:88-98` 已有模式，提交 / 清除筛选后按 URL 回填。
+   - `key` 写在组件内部返回的 `<select>` 上（合法且有效：key 变化会强制重建该元素）。
+3. `src/pages/BrowsePage.tsx`
+   - 删除本地 `ENTRY_TYPES`（第 19-25 行）与内联 `<select name="entry_type">`（第 95-106 行）。
+   - 改为 `<EntryTypeFilter value={p.get('entry_type') ?? ''} />`；`buildParams` 一行不改。
+4. `src/pages/SummariesPage.tsx`
+   - 第 47 行的 `<input name="entry_type" ...>` → `<EntryTypeFilter value={p.get('entry_type') ?? ''} />`。
+   - 请求参数不变（`entry_type` 本来就透传给 `/api/summaries`，`routers/summaries.py:19` 支持）。
 
 ### 验收
-- `/browse?year=2025` 首屏请求带 `per_page=50`，一页出满 50 条（真实库 2025 年共 522 篇，已实测）。
-- 切"100 篇/页"再翻页，URL 与请求都保持 `per_page=100`；点"筛选"后 `page` 归 1、`per_page` 保留。
+- `/summaries` 的类型下拉与 `/browse` 完全同款（同一个组件、同一份选项、同一句"全部类型"）。
+- 选"股票日记"提交后 URL 为 `?entry_type=stock_diary`，请求带 `entry_type=stock_diary`，下拉回填正确。
+- `SummariesPage.test.tsx` 新增断言：`select[name="entry_type"]` 存在，且 `?entry_type=note` 时选中"随手记"。
+- `BrowsePage.test.tsx:237-240` 关于"条件行 4 个 input/select"的断言仍然通过。
 
 ---
 
-## 任务 B：筛选栏统一为"原生 input + 直接打字"（年 / 月）
+## 任务 B：把"过去的今天"改名为"日期查找"（页面 + 左侧导航）
 
-**目标**：年、月都是原生 input，可直接键盘输入；同时用原生 `datalist` 提示"有哪些年份 / 月份"。
+**目标**：把**页面本身与左侧导航**的命名改为"日期查找"，不再暗示"只能看今天"；
+**首页入口卡按用户要求保留"过去的今天"**，不做改动。同时**不改动 URL 契约**（`/on-this-day?month=&day=` 被
+`StatisticsPage.tsx:62`、`RandomPage` 新入口、`OnThisDayPage.test.tsx`、后端 `routers/calendar.py` 依赖）。
 
-### 改动（已完成）
-1. `src/api/filters.ts`（纯函数，避免组件文件混合导出触发 react-refresh 告警）：
-   `MIN_YEAR` / `MAX_YEAR` / `normalizeYear` / `normalizeMonth` / `yearMonthParams`。
-2. `src/components/YearMonthFilter.tsx`（BrowsePage、SummariesPage 复用）：
-   - 年：`<input name="year" type="number" inputMode="numeric" min="2000" max="2100" list="filter-years">`
-     + `<datalist id="filter-years">`，候选项来自 `getYears()`：`<option value="2025" label="522 篇">`。
-   - 月：`<input name="month" type="number" inputMode="numeric" min="1" max="12" list="filter-months">`
-     + `<datalist id="filter-months">`：输入了合法年份 → 候选项来自 `getMonths(year)`（`label` 为条数）；
-     未输入 / 非法年份 → 退回 1–12 通用候选（后端允许"只给 month 不给 year"）。
-   - 归一化兜底（避免 422）：`year` 必须是 4 位且 2000–2100、`month` 必须在 1–12，否则视为"不筛选"，
-     不传给后端；年份输入满 4 位数字时才触发 `getMonths` 请求。
-3. `src/pages/BrowsePage.tsx`：用 `YearMonthFilter` 替换 `year` input + `month` select；
-   `entry_type` 保留 select 并补中文标签（普通日记 / 股票日记 / 回顾 / 总结 / 随手记）；
-   新增"清除筛选"链接与一行提示。
-4. `src/pages/SummariesPage.tsx`：同样用 `YearMonthFilter` 替换两个裸 input，并用 `yearMonthParams`
-   组装查询参数（`/api/summaries` 已支持 `year`/`month`，`routers/summaries.py:18-19`）。
-5. `src/styles/globals.css`：补 `.filters .hint` / `.filters .clear` / `.filters input[type='date']`，
-   沿用现有 `@media (max-width:680px)` 竖排规则。
+### 改动清单（只动展示名，不动路由 / 组件名 / 接口名）
+| 文件 | 现在 | 改成 |
+| --- | --- | --- |
+| `src/app/AppLayout.tsx:19` | `{ to: '/on-this-day', label: '过去的今天', ... }`（图标保持原样） | `label: '日期查找'` |
+| `src/pages/OnThisDayPage.tsx:25` | `useDocumentTitle('过去的今天')` | `useDocumentTitle('日期查找')` |
+| `src/pages/OnThisDayPage.tsx:53` | `<h1>过去的今天</h1>` | `<h1>日期查找</h1>` |
+| `src/styles/globals.css:545` | 注释 `“过去的今天”按年份分组…` | 注释同步改名（仅注释） |
+| `src/pages/OnThisDayPage.test.tsx:33` | `describe('过去的今天日期选择')` | `describe('日期查找日期选择')` |
+| `webapp-backend/README.md:51` | `"过去的今天"用原生 type="date"…` | `"日期查找"用原生 type="date"…` |
+| `webapp-backend/schemas.py:136,147,154`、`services/calendar.py:53` | docstring 文案 | 同步为"日期查找"（只动中文说明） |
+| `database.py:362` | 分区注释 `# ---------------- 过去的今天 ----------------` | 注释同步改名 |
+| `README.md:21,113`（仓库根） | 「过去的今天」（feature 列表 / 使用说明里的导航项） | 「日期查找」 |
+
+**明确不动**：`src/pages/HomePage.tsx:38-44` 的首页入口卡（`<h2>过去的今天</h2>` + "查看同月同日的历史记录。"）
+保持原样——首页作为"入口导语"用它，页面内标题不重复这个词（用户 2026-09 决定）。
 
 ### 验收
-- `/browse?year=2025&month=9` 与手输 `2025` / `9` 后提交结果一致；输入 `13` 月按空处理，不报错误页。
-- 年份输入框能弹出候选年份（含条数）；月份候选随年份变化（已用真实库 `/api/months?year=2025` 验证）。
+- **三处**文案一致：左侧导航标签、页面 `<h1>`、浏览器标签页标题（`日期查找 · 我的日记`）。
+- 首页入口卡仍是"过去的今天"（不做任何改动），点进去落地页标题为"日期查找"。
+- `StatisticsPage.test.tsx:42` 断言的 `href=/on-this-day?month=9&day=17` 不受影响（路由不变）。
+- 全仓 `grep -rn "过去的今天"` 工作区只剩 `HomePage.tsx:42` 一处（外加本计划文档里的"旧名 → 新名"对照说明，
+  以及 `reference/plan.md` 这份最初设计稿——作为历史资料保持原样不改）。
 
 ---
 
-## 任务 C：`on-this-day` 用原生日期输入 + 打字 + 快捷按钮
+## 任务 C：随机回忆页点日期进入"日期查找"对应日期
 
-**目标**：不再手填两个 number input；用原生 `<input type="date">`（可键盘打字，也带浏览器原生日历弹层），
-并补"今天 / 前一天 / 后一天"快捷。
+**目标**：`/random` 顶部那条 `2026-04-16` 变成链接，点进去就是 `/on-this-day?month=4&day=16`，
+加载该月日在**各年份**的记录（不是只有 2026 年这一天）。
 
-### 改动（已完成）
-1. `src/pages/OnThisDayPage.tsx`
-   - 表单：`<input name="date" type="date" key={dateValue} defaultValue={dateValue}>`（值只取月 / 日；
-     年份固定用闰年参考年 2024，这样 2 月 29 日也是合法日期，也不会出现"2026-02-29"这种不存在的值；
-     用 `key` 让快捷按钮改变 URL 后输入框回填新值）。
-   - URL **契约不变**：仍是 `?month=9&day=17`（后端 `/api/on-this-day` 与 `tests/test_web_api.py:181-194` 不动）。
-   - 快捷按钮：`今天`、`← 前一天`、`后一天 →`（在参考年 2024 上做日期运算：
-     2 月 28 日 → 2 月 29 日 → 3 月 1 日，跨月 / 跨年都正确）。
-   - 月 / 日做范围钳制（非法 URL 参数回退到今天），避免给 `type="date"` 喂非法值、也避免 422。
-   - 文案：`2 月 28 日 · 共 N 篇`，下面仍按年份分组。
-2. 备选（若不能接受浏览器日期格式差异）：改回月 / 日两个 `type="number"` + 打字 + 同样的快捷按钮 ——
-   只需改 `OnThisDayPage` 表单那一小块。
+### 改动清单
+1. `src/pages/RandomPage.tsx:26-28`
+   ```tsx
+   <h2>
+     <Link to={`/on-this-day?month=${data.month}&day=${data.day}`} title="看这一天的历史记录">
+       <time dateTime={data.date}>{data.date}</time>
+     </Link>
+   </h2>
+   ```
+   - 链接文字就是日期本身（可访问名 = `2026-04-16`），沿用 `.random-bar h2` 的字号，不新开按钮位。
+2. `src/styles/globals.css`：`.random-bar h2 a` 继承 `color: inherit`、`text-decoration: none`，
+   `:hover` 时加下划线 + `color: var(--accent)`，让"可点"有反馈（紧随 `.random-bar h2` 规则，第 574-579 行后）。
+3. `src/pages/RandomPage.test.tsx`：新增用例，断言
+   `getByRole('link', { name: '2026-04-16' })` 的 `href === '/on-this-day?month=4&day=16'`。
+4. 兼容性：`RandomPage.test.tsx` 里 `renderPage()` 的 memory router 增加
+   `{ path: '/on-this-day', element: <div>日期查找</div> }`，便于后续补"点击后跳转"的行为断言。
 
 ### 验收
-- 选 `2024-02-28` → 请求 `?month=2&day=28`；"后一天"→ `?month=2&day=29` → 再"后一天"→ `?month=3&day=1`。
-- 真实库 `2 月 29 日` 有 2 篇日记，可正常浏览（`/api/on-this-day?month=2&day=29` 返回 200）。
-- 无日记的日期显示 `2月28日暂无日记`。
+- `/random` 显示日期可点，`href` 为 `/on-this-day?month=<月>&day=<日>`；点进去页面 `<h1>` 为"日期查找"，
+  日期框回填该月日，列表按年份分组。
+- 多篇 / 单篇两种形态都不受影响（`random-entries` 与 `single` 的既有断言保持通过）。
 
 ---
 
-## 任务 D（新增）：`RandomPage` 显示全文
-
-**目标**：随机一天直接展示该日各篇日记的**完整正文**，而不是 120 字预览。
-
-### 改动（已完成）
-后端：
-1. `webapp-backend/schemas.py`：新增 `RandomDayItem(EntryPreview)`（含 `content: str`），
-   并把 `RandomDayResponse.items` 改为 `List[RandomDayItem]`。
-2. `webapp-backend/services/calendar.py`：`get_random_day` 中 `OnThisDayItem.model_validate(entry)`
-   → `RandomDayItem.model_validate(entry)`。
-3. `database.py` **不需要改**：`entries_for_date()` 已同时返回 `content` 与 `preview`。
-4. `tests/test_web_api.py`：`test_random_response_is_not_cacheable` 增补断言
-   `item["content"]` 等于该篇正文。
-
-前端：
-1. `src/api/types.ts`：新增 `RandomDayItem extends EntryPreview { content: string }`；
-   `RandomDayResponse.items: RandomDayItem[]`。
-2. `src/pages/RandomPage.tsx`：每篇渲染 `日期 + entry_type/字数 + <div className="content">{content}</div>`
-   （复用 `EntryPage.tsx:44` 的 `.content` 样式），保留"再随机一天"与"查看摘要"入口。
-3. `src/pages/RandomPage.test.tsx`：断言全文渲染、`/api/random` 只请求一次。
-
-### 验收
-- `/random` 能看到整篇正文；"再随机一天"换一天；空库仍 404 → `ErrorState`。
-
----
-
-## 交付物清单
-
-**新增**
-- `webapp-frontend/src/api/filters.ts`、`webapp-frontend/src/components/YearMonthFilter.tsx`
-- `webapp-frontend/src/pages/BrowsePage.test.tsx`、`OnThisDayPage.test.tsx`、`RandomPage.test.tsx`
-- `plan.md`（本文件）
-
-**修改**
-- `webapp-frontend/src/pages/BrowsePage.tsx`（per_page / 区间文案 / 复用筛选组件）
-- `webapp-frontend/src/pages/OnThisDayPage.tsx`（原生日期输入 + 快捷按钮）
-- `webapp-frontend/src/pages/SummariesPage.tsx`、`SummariesPage.test.tsx`（复用筛选组件）
-- `webapp-frontend/src/pages/RandomPage.tsx`、`src/api/types.ts`（随机全文）
-- `webapp-frontend/src/styles/globals.css`（筛选栏 / 日期输入 / 快捷按钮样式）
-- `webapp-backend/schemas.py`、`webapp-backend/services/calendar.py`（随机全文）
-- `tests/test_web_api.py`（随机接口全文断言）、`webapp-backend/README.md`（说明同步）
-
-## 验证命令
+## 验证方式（改完后逐条跑）
 
 ```bash
-# 后端
-python -m unittest discover -s tests -p "test_*.py" -v
-
-# 前端
 cd webapp-frontend
+npm run typecheck          # tsc -b
 npm run lint
-npm run typecheck
-npm test -- --run
-npx prettier --check src/
-npm run build
-
-# 手动
-python webapp-backend/app.py            # 终端 1
-cd webapp-frontend && npm run dev       # 终端 2
-# /browse?year=2025   → 一页 50 篇、年 / 月可打字、可清除筛选
-# /on-this-day        → 日期输入 + 今天 / 前后一天
-# /random             → 显示全文
+npm run format:check
+npx vitest run src/pages/BrowsePage.test.tsx src/pages/SummariesPage.test.tsx \
+  src/pages/RandomPage.test.tsx src/pages/OnThisDayPage.test.tsx src/pages/StatisticsPage.test.tsx
+npm test -- --run          # 全量回归
 ```
 
-## 实际验证结果（本次）
+- 手动验证（`npm run dev` + 后端 `/api/*`）：
+  1. `/browse` 与 `/summaries` 的类型下拉逐项对比（选项文字、顺序、空选项）。
+  2. `/summaries?entry_type=note` 能筛出随记类摘要。
+  3. 左侧点了"日期查找"→ 标签页标题正确；`/random` 点日期 → URL 变成对应月日，标题为"日期查找"。
 
-- 后端 `python -m unittest discover -s tests`：**158 tests OK**。
-- 前端 `npm run lint`：0 error / 0 warning；`npm run typecheck`：通过。
-- 前端 `npx vitest run`：6 文件 / **12 tests passed**；`npx prettier --check src/`：全部符合。
-- `npm run build`：成功（326 kB / gzip 103 kB）。
-- 真实库 E2E（`diary_database.db`）：`/api/entries?year=2025&per_page=50` → total 522、一页 50 条；
-  `/api/random` → 带 `content` 全文；`/api/on-this-day?month=2&day=29` → 200（2 篇）；
-  `/api/on-this-day?month=13` → 422；`/api/months?year=2025` → 12 个月的条数齐全。
-
-## 风险与未做项（明确记录）
-
-- 不引入任何 UI 库；`<input type="date">` 的显示格式随浏览器 / 系统 locale 变化
-  （Chrome/Windows 为"年/月/日"，Safari 与 Chrome 不完全一致），且参考年固定显示 2024
-  （因为本页只查月 / 日，闰年参考年才能表达 2 月 29 日）。若后续要"专业 datepicker"，
-  按第 0 节对比表升级（推荐 `react-day-picker@10`，自带 `zhCN` 与样式）。
-- `/api/entries` 默认 `per_page` 仍为 20（仅浏览页前端传 50）；摘要页页大小不在本次范围。
-- `on-this-day` 仍只显示 120 字预览（正文点进详情页），本次不改成全文。
-
----
-
-## 任务 E（新增）：`browse?full=1` 回归分页
-
-**根因**：`/api/entries/full` 原先按筛选条件 `SELECT` 全部匹配行并一次性返回
-（`database.py::full_entries` 无 LIMIT、`services/entries.py::list_full_entries` 用 `total=len(items)`），
-`BrowsePage` 全文模式又隐藏了 `per_page` 选择器与 `Pagination`；`?year=2025&full=1` 会一次拉回 522 篇正文。
-
-### 改动
-1. `database.py::full_entries`：加 `page` / `per_page`，SQL 补 `LIMIT ? OFFSET ?`（与 `entries()` 一致）。
-2. `webapp-backend/services/entries.py::list_full_entries`：加 `page` / `per_page`，复用
-   `db.count_entries()` 计算 `total` 与 `pages = max(1, ceil(total / per_page))`。
-3. `webapp-backend/schemas.py::FullEntryListResponse`：补 `page` / `per_page` / `pages`，契约与
-   `EntryListResponse` 完全对齐（`items` 仍多带 `content` / `file_source`）。
-4. `webapp-backend/routers/entries.py::api_full_entries`：接收 `page`（默认 1）与 `per_page`
-   （默认 20、上限 100），与 `/api/entries` 参数一致。
-5. 前端 `src/api/types.ts::FullEntryListResponse`：补分页字段。
-6. 前端 `src/pages/BrowsePage.tsx`：
-   - “每页”选择器不再在全文模式隐藏；区间文案与 `Pagination` 统一按当前 `data` 计算
-     （`第 101–123 篇 / 共 123 篇完整日记`）；
-   - 全文模式翻页沿用 URL 里的 `page` / `per_page`，切换开关仍回到第 1 页（`toggleFullMode` 保留原有行为）。
-7. `tests/test_web_api.py`：`test_full_entries_keeps_pagination_and_returns_content`
-   （`per_page=1` 断言 `total/page/per_page/pages = 2/1/1/2`，第 1、2 页分别返回 09-18、09-17 且带全文）。
-
-### 验收（已实测）
-- 后端 `python -m unittest discover -s tests`：**160 tests OK**。
-- 前端 `npx vitest run`：8 文件 / **22 tests passed**；`npm run lint`、`npm run typecheck` 通过。
-- 真实库 `diary_database.db`：`/api/entries/full?year=2025&page=11&per_page=50` →
-  `200`，`total=522 / page=11 / per_page=50 / pages=11`，该页 22 条（最后一条 `2025-01-18`），
-  响应当页只含 50 篇正文，不再整库返回。
-
-
+## 明确不做（本次范围外）
+- 不改路由 `/on-this-day`，不改 `OnThisDayPage` / `getOnThisDay` / `OnThisDayResponse` 等**代码标识符**
+  （改 URL 会牵动前端测试与后端路由文档，收益低）；若确需改 URL 再单开一次任务。
+- 不在随机页给正文条目加"查看原文"入口（当前页面刻意只做"读一天全文"）。
+- 不引入任何 UI 库，样式继续手写 `src/styles/globals.css`。

@@ -16,7 +16,7 @@ function NavIcon({ children }: { children: ReactNode }) {
 const navigation = [
   { to: '/', label: '首页', icon: '⌂', end: true },
   { to: '/browse', label: '浏览日记', icon: '▧' },
-  { to: '/on-this-day', label: '过去的今天', icon: '◴' },
+  { to: '/on-this-day', label: '日期查找', icon: '◴' },
   { to: '/random', label: '随机回忆', icon: '⌁' },
   { to: '/summaries', label: 'AI 摘要', icon: '◌' },
   { to: '/statistics', label: '统计', icon: '▤' },
