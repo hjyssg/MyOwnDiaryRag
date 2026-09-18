@@ -5,6 +5,7 @@ import { EntryCard } from '../components/EntryCard'
 import { EmptyState, ErrorState, LoadingState } from '../components/States'
 import { useApi } from '../hooks/useApi'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
+import { useNavigationShortcuts } from '../hooks/useNavigationShortcuts'
 
 const pad = (n: number) => String(n).padStart(2, '0')
 
@@ -34,6 +35,10 @@ export function OnThisDayPage() {
   const { data, error, loading } = useApi((s) => getOnThisDay(month, day, s), [month, day])
   const go = (target: { month: number; day: number }) =>
     setSearchParams({ month: String(target.month), day: String(target.day) })
+  useNavigationShortcuts({
+    previous: () => go(shiftDate(month, day, -1)),
+    next: () => go(shiftDate(month, day, 1)),
+  })
   // 原生日期输入提交的是 YYYY-MM-DD；URL 仍沿用后端的 ?month=&day= 契约
   const onSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -42,8 +47,16 @@ export function OnThisDayPage() {
     go({ month: Number(parts[1]), day: Number(parts[2]) })
   }
   return (
-    <>
-      <h1>过去的今天</h1>
+    <div className="on-this-day-page">
+      <header className="page-intro reflection-intro">
+        <div>
+          <h1>过去的今天</h1>
+        </div>
+        <time>
+          {month}月<br />
+          {day}日
+        </time>
+      </header>
       <Form className="filters" onSubmit={onSubmit}>
         <input
           key={dateValue}
@@ -65,6 +78,7 @@ export function OnThisDayPage() {
           后一天 →
         </button>
       </div>
+      <p className="shortcut-hint">快捷键：← 前一天，→ 后一天</p>
       {loading ? (
         <LoadingState />
       ) : error ? (
@@ -73,19 +87,26 @@ export function OnThisDayPage() {
         <EmptyState message={`${month}月${day}日暂无日记`} />
       ) : (
         <>
-          <p className="meta">
+          <p className="list-meta">
             {month} 月 {day} 日 · 共 {data.total} 篇
           </p>
-          {data.groups.map((g) => (
-            <section key={g.year}>
-              <h2>{g.year} 年</h2>
-              {g.items.map((e) => (
-                <EntryCard key={e.id} entry={e} />
-              ))}
-            </section>
-          ))}
+          <div className="memory-timeline">
+            {data.groups.map((g) => (
+              <section className="memory-year" key={g.year}>
+                <h2>
+                  {g.year}
+                  <small>年</small>
+                </h2>
+                <div>
+                  {g.items.map((e) => (
+                    <EntryCard key={e.id} entry={e} />
+                  ))}
+                </div>
+              </section>
+            ))}
+          </div>
         </>
       )}
-    </>
+    </div>
   )
 }

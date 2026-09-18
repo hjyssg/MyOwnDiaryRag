@@ -11,6 +11,6 @@ describe('应用路由', () => {
     )
     render(<RouterProvider router={router} />)
     expect(await screen.findByRole('heading', { name: '404' })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: '摘要' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'AI 摘要' })).toBeInTheDocument()
   })
 })

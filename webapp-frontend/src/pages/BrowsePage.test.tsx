@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { createMemoryRouter, RouterProvider } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { BrowsePage } from './BrowsePage'
@@ -25,12 +26,7 @@ const entriesPage = {
   entry_type: null,
   query: null,
 }
-const years = [{ year: 2024, entries: 123, words: 900 }]
-const months = [{ month: 9, entries: 12, words: 90 }]
-
-function bodyFor(url: string) {
-  if (url.includes('/api/years')) return years
-  if (url.includes('/api/months')) return months
+function bodyFor() {
   return entriesPage
 }
 function stubFetch() {
@@ -39,7 +35,7 @@ function stubFetch() {
     const url = String(input)
     calls.push(url)
     return Promise.resolve(
-      new Response(JSON.stringify(bodyFor(url)), {
+      new Response(JSON.stringify(bodyFor()), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
       }),
@@ -70,20 +66,22 @@ describe('浏览页分页与筛选', () => {
       true,
     )
     expect(screen.getByText('第 1–50 篇 / 共 123 篇')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '查看原文 →' })).toHaveAttribute('href', '/entries/1')
+    expect(screen.getAllByText('日记')).toHaveLength(1)
+    expect(screen.queryByText('12 字')).not.toBeInTheDocument()
   })
 
-  it('URL 里的 per_page 优先，年份候选来自 /api/years', async () => {
+  it('URL 里的 per_page 优先，年份显示在文本输入框中', async () => {
     const calls = stubFetch()
     renderPage('/browse?year=2024&per_page=100')
 
     expect(await screen.findByText('旅行与朋友聚会')).toBeInTheDocument()
     expect(calls.some((url) => url.includes('per_page=100'))).toBe(true)
     const yearInput = document.querySelector('input[name="year"]') as HTMLInputElement
+    expect(yearInput.type).toBe('text')
     expect(yearInput.value).toBe('2024')
-    const options = [...document.querySelectorAll('#filter-years option')].map((o) =>
-      o.getAttribute('value'),
-    )
-    expect(options).toEqual(['2024'])
+    expect(calls.some((url) => url.includes('/api/years'))).toBe(false)
+    expect(calls.some((url) => url.includes('/api/months'))).toBe(false)
   })
 
   it('非法的年 / 月不会传给后端', async () => {
@@ -95,5 +93,69 @@ describe('浏览页分页与筛选', () => {
     expect(entriesCall).toBeDefined()
     expect(entriesCall).not.toContain('year=')
     expect(entriesCall).not.toContain('month=')
+  })
+
+  it('完整正文模式请求全文接口、显示正文且不显示分页', async () => {
+    const fullEntries = {
+      total: 1,
+      items: [{ ...entriesPage.items[0], content: '这是完整日记正文。' }],
+      year: 2024,
+      month: 9,
+      entry_type: null,
+      query: null,
+    }
+    const calls: string[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL) => {
+        const url = String(input)
+        calls.push(url)
+        return Promise.resolve(
+          new Response(
+            JSON.stringify(url.includes('/api/entries/full') ? fullEntries : entriesPage),
+          ),
+        )
+      }),
+    )
+    renderPage('/browse?year=2024&month=9&full=1')
+
+    expect(await screen.findByText('这是完整日记正文。')).toBeInTheDocument()
+    expect(calls.some((url) => url.includes('/api/entries/full?'))).toBe(true)
+    expect(calls.some((url) => url.includes('/api/entries?') && !url.includes('/full'))).toBe(false)
+    expect(screen.queryByText('第 1–50 篇 / 共 123 篇')).not.toBeInTheDocument()
+    expect(screen.getByText('共 1 篇完整日记')).toBeInTheDocument()
+  })
+
+  it('切换完整正文开关后立即请求全文接口，无需提交搜索表单', async () => {
+    const fullEntries = {
+      total: 1,
+      items: [{ ...entriesPage.items[0], content: '切换后立即显示的完整正文。' }],
+      year: 2024,
+      month: null,
+      entry_type: null,
+      query: null,
+    }
+    const calls: string[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL) => {
+        const url = String(input)
+        calls.push(url)
+        return Promise.resolve(
+          new Response(JSON.stringify(url.includes('/api/entries/full') ? fullEntries : entriesPage)),
+        )
+      }),
+    )
+    const user = userEvent.setup()
+    renderPage('/browse?year=2024&page=2')
+
+    await screen.findByText('旅行与朋友聚会')
+    await user.click(screen.getByRole('checkbox', { name: '显示完整正文' }))
+
+    expect(await screen.findByText('切换后立即显示的完整正文。')).toBeInTheDocument()
+    const fullCall = calls.find((url) => url.includes('/api/entries/full?'))
+    expect(fullCall).toBeDefined()
+    expect(fullCall).toContain('year=2024')
+    expect(fullCall).not.toContain('page=2')
   })
 })

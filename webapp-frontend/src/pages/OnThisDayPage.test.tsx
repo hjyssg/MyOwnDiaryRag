@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { createMemoryRouter, RouterProvider } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -69,5 +69,24 @@ describe('过去的今天日期选择', () => {
     const apiCall = calls.find((url) => url.includes('/api/on-this-day'))
     expect(apiCall).toContain(`month=${today.getMonth() + 1}`)
     expect(apiCall).toContain(`day=${today.getDate()}`)
+  })
+
+  it('方向键和鼠标侧键切换日期，日期输入框聚焦时不触发', async () => {
+    const calls = stubFetch()
+    renderPage()
+    await screen.findByText('2月28日暂无日记')
+
+    fireEvent.keyDown(window, { key: 'ArrowRight' })
+    await waitFor(() => expect(calls.some((url) => url.includes('month=2&day=29'))).toBe(true))
+    fireEvent.mouseDown(window, { button: 3 })
+    await waitFor(() =>
+      expect(calls.filter((url) => url.includes('month=2&day=28')).length).toBeGreaterThan(1),
+    )
+
+    const input = document.querySelector('input[name="date"]') as HTMLInputElement
+    input.focus()
+    const count = calls.length
+    fireEvent.keyDown(input, { key: 'ArrowRight' })
+    expect(calls).toHaveLength(count)
   })
 })

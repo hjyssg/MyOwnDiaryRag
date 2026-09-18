@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 """从项目根目录的 .env 读取配置。"""
 
+import os
 from pathlib import Path
 
 
@@ -29,8 +30,10 @@ def load_env():
 
 def get_database_path() -> Path:
     """读取数据库路径；Web 等只读功能不要求配置日记目录。"""
-    env = load_env()
-    database_path = env.get('DATABASE_PATH')
+    database_path = os.environ.get('DATABASE_PATH')
+    if not database_path:
+        env = load_env()
+        database_path = env.get('DATABASE_PATH')
     if not database_path:
         raise ValueError("DATABASE_PATH 未在 .env 中配置")
 
@@ -85,10 +88,12 @@ def get_emotion_labels():
     这里**不抛异常**：Web 的 /api/summaries 需要它来校验 emotion 参数，
     批量总结也要用它来构造 Prompt 与算法指纹；没有 .env 时退回默认值即可。
     """
-    try:
-        env = load_env()
-    except Exception:
-        return list(DEFAULT_EMOTION_LABELS)
-    labels = split_emotion_labels(env.get("EMOTION_LABELS"))
+    configured_labels = os.environ.get("EMOTION_LABELS")
+    if configured_labels is None:
+        try:
+            configured_labels = load_env().get("EMOTION_LABELS")
+        except Exception:
+            configured_labels = None
+    labels = split_emotion_labels(configured_labels)
     return labels or list(DEFAULT_EMOTION_LABELS)
 

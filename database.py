@@ -72,6 +72,57 @@ class Database:
         finally:
             conn.close()
 
+    def statistics(self) -> dict:
+        """全库趣味统计；仅聚合 diary_entries，不读取或修改正文。"""
+        conn = self._connect()
+        try:
+            overview = conn.execute(
+                """SELECT COUNT(*) AS total_entries, COALESCE(SUM(word_count), 0) AS total_words,
+                          MIN(date) AS first_date, MAX(date) AS last_date
+                   FROM diary_entries"""
+            ).fetchone()
+            years = conn.execute(
+                """SELECT year, COUNT(*) AS entries, COALESCE(SUM(word_count), 0) AS words
+                   FROM diary_entries GROUP BY year ORDER BY year"""
+            ).fetchall()
+            entry_types = conn.execute(
+                """SELECT entry_type, COUNT(*) AS entries, COALESCE(SUM(word_count), 0) AS words
+                   FROM diary_entries GROUP BY entry_type ORDER BY entries DESC, entry_type"""
+            ).fetchall()
+            months = conn.execute(
+                """SELECT month, COUNT(*) AS entries, COALESCE(SUM(word_count), 0) AS words
+                   FROM diary_entries GROUP BY month ORDER BY month"""
+            ).fetchall()
+            weekdays = conn.execute(
+                """SELECT CAST(strftime('%w', date) AS INTEGER) AS weekday, COUNT(*) AS entries
+                   FROM diary_entries GROUP BY weekday ORDER BY weekday"""
+            ).fetchall()
+            most_active_year = conn.execute(
+                """SELECT year, COUNT(*) AS entries, COALESCE(SUM(word_count), 0) AS words
+                   FROM diary_entries GROUP BY year ORDER BY entries DESC, words DESC, year DESC LIMIT 1"""
+            ).fetchone()
+            longest_entry = conn.execute(
+                """SELECT id, date, entry_type, word_count FROM diary_entries
+                   ORDER BY word_count DESC, date DESC, id DESC LIMIT 1"""
+            ).fetchone()
+            most_repeated_date = conn.execute(
+                """SELECT month, day, COUNT(*) AS entries FROM diary_entries
+                   GROUP BY month, day ORDER BY entries DESC, month, day LIMIT 1"""
+            ).fetchone()
+            result = dict(overview)
+            total = result["total_entries"]
+            result["average_words"] = round(result["total_words"] / total) if total else 0
+            result["most_active_year"] = dict(most_active_year) if most_active_year else None
+            result["longest_entry"] = dict(longest_entry) if longest_entry else None
+            result["most_repeated_date"] = dict(most_repeated_date) if most_repeated_date else None
+            result["years"] = [dict(row) for row in years]
+            result["entry_types"] = [dict(row) for row in entry_types]
+            result["months"] = [dict(row) for row in months]
+            result["weekdays"] = [dict(row) for row in weekdays]
+            return result
+        finally:
+            conn.close()
+
     def _build_where(self, year, month, entry_type, query, params) -> str:
         clauses = []
         if year is not None:
@@ -140,6 +191,32 @@ class Database:
         finally:
             conn.close()
 
+    def full_entries(
+        self,
+        year: Optional[int] = None,
+        month: Optional[int] = None,
+        entry_type: Optional[str] = None,
+        query: Optional[str] = None,
+    ) -> List[dict]:
+        """按浏览筛选条件读取全部匹配日记全文，不分页。"""
+        conn = self._connect()
+        try:
+            params: List = []
+            where = self._build_where(year, month, entry_type, query, params)
+            rows = conn.execute(
+                f"""SELECT id, date, year, month, day, entry_type, word_count, content, file_source
+                    FROM diary_entries{where} ORDER BY date DESC, id DESC""",
+                params,
+            ).fetchall()
+            result = []
+            for row in rows:
+                item = dict(row)
+                item["preview"] = self._preview(item["content"])
+                result.append(item)
+            return result
+        finally:
+            conn.close()
+
 
 
     def entry(self, entry_id: int) -> Optional[dict]:
@@ -159,6 +236,20 @@ class Database:
                 return None
             d = dict(row)
             d["preview"] = self._preview(d.get("content") or "")
+            previous = conn.execute(
+                """SELECT id, date, entry_type FROM diary_entries
+                   WHERE date < ? OR (date = ? AND id < ?)
+                   ORDER BY date DESC, id DESC LIMIT 1""",
+                (d["date"], d["date"], entry_id),
+            ).fetchone()
+            following = conn.execute(
+                """SELECT id, date, entry_type FROM diary_entries
+                   WHERE date > ? OR (date = ? AND id > ?)
+                   ORDER BY date ASC, id ASC LIMIT 1""",
+                (d["date"], d["date"], entry_id),
+            ).fetchone()
+            d["previous_entry"] = dict(previous) if previous else None
+            d["next_entry"] = dict(following) if following else None
             return d
         finally:
             conn.close()

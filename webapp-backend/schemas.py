@@ -25,11 +25,21 @@ class EntryPreview(BaseModel):
     preview: str
 
 
+class AdjacentEntry(BaseModel):
+    """详情页时间顺序中的相邻实际日记。"""
+
+    id: int
+    date: str
+    entry_type: str
+
+
 class EntryDetail(EntryPreview):
     """单篇日记完整信息"""
 
     content: str
     file_source: Optional[str] = None
+    previous_entry: Optional[AdjacentEntry] = None
+    next_entry: Optional[AdjacentEntry] = None
 
 
 class EntryListResponse(BaseModel):
@@ -40,6 +50,24 @@ class EntryListResponse(BaseModel):
     per_page: int
     pages: int
     items: List[EntryPreview]
+    year: Optional[int] = None
+    month: Optional[int] = None
+    entry_type: Optional[str] = None
+    query: Optional[str] = None
+
+
+class FullEntry(EntryPreview):
+    """全文浏览项。"""
+
+    content: str
+    file_source: Optional[str] = None
+
+
+class FullEntryListResponse(BaseModel):
+    """全文浏览响应：按筛选条件返回全部匹配项，不分页。"""
+
+    total: int
+    items: List[FullEntry]
     year: Optional[int] = None
     month: Optional[int] = None
     entry_type: Optional[str] = None
@@ -60,6 +88,45 @@ class MonthStat(BaseModel):
     month: int
     entries: int
     words: int
+
+
+class TypeStat(BaseModel):
+    entry_type: str
+    entries: int
+    words: int
+
+
+class WeekdayStat(BaseModel):
+    weekday: int
+    entries: int
+
+
+class LongestEntry(BaseModel):
+    id: int
+    date: str
+    entry_type: str
+    word_count: int
+
+
+class RepeatedDateStat(BaseModel):
+    month: int
+    day: int
+    entries: int
+
+
+class StatisticsResponse(BaseModel):
+    total_entries: int
+    total_words: int
+    average_words: int
+    first_date: Optional[str] = None
+    last_date: Optional[str] = None
+    most_active_year: Optional[YearStat] = None
+    longest_entry: Optional[LongestEntry] = None
+    most_repeated_date: Optional[RepeatedDateStat] = None
+    years: List[YearStat]
+    entry_types: List[TypeStat]
+    months: List[MonthStat]
+    weekdays: List[WeekdayStat]
 
 
 class OnThisDayItem(BaseModel):

@@ -3,7 +3,7 @@
 from typing import Optional
 
 from database import Database
-from schemas import EntryListResponse
+from schemas import EntryListResponse, FullEntryListResponse
 
 
 def normalize_query(query: Optional[str]) -> Optional[str]:
@@ -48,6 +48,27 @@ def list_entries(
         page=page,
         per_page=per_page,
         pages=pages,
+        items=items,
+        year=year,
+        month=month,
+        entry_type=entry_type,
+        query=normalized_query,
+    )
+
+
+def list_full_entries(
+    db: Database,
+    *,
+    year: Optional[int] = None,
+    month: Optional[int] = None,
+    entry_type: Optional[str] = None,
+    query: Optional[str] = None,
+) -> FullEntryListResponse:
+    """按浏览筛选条件返回全部全文；调用方负责提示大结果集的加载成本。"""
+    normalized_query = normalize_query(query)
+    items = db.full_entries(year=year, month=month, entry_type=entry_type, query=normalized_query)
+    return FullEntryListResponse(
+        total=len(items),
         items=items,
         year=year,
         month=month,

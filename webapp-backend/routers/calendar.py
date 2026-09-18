@@ -8,6 +8,7 @@ from schemas import (
     MonthStat,
     OnThisDayResponse,
     RandomDayResponse,
+    StatisticsResponse,
     YearStat,
 )
 from services.calendar import (
@@ -34,6 +35,13 @@ def api_months(
     """某一年各月份统计。"""
 
     return db.months(year)
+
+
+@router.get("/statistics", response_model=StatisticsResponse)
+def api_statistics(db: Database = Depends(get_database)) -> dict:
+    """全库的记录、字数、类型、日期与时间分布统计。"""
+
+    return db.statistics()
 
 
 @router.get("/on-this-day", response_model=OnThisDayResponse)

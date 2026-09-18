@@ -6,8 +6,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from database import Database
 from dependencies import get_database
-from schemas import EntryDetail, EntryListResponse
-from services.entries import list_entries
+from schemas import EntryDetail, EntryListResponse, FullEntryListResponse
+from services.entries import list_entries, list_full_entries
 
 router = APIRouter(prefix="/api", tags=["entries"])
 
@@ -33,6 +33,19 @@ def api_entries(
         page=page,
         per_page=per_page,
     )
+
+
+@router.get("/entries/full", response_model=FullEntryListResponse)
+def api_full_entries(
+    year: Optional[int] = Query(default=None),
+    month: Optional[int] = Query(default=None, ge=1, le=12),
+    entry_type: Optional[str] = Query(default=None),
+    q: Optional[str] = Query(default=None),
+    db: Database = Depends(get_database),
+) -> FullEntryListResponse:
+    """全文浏览：按当前筛选条件返回全部匹配日记，不分页。"""
+
+    return list_full_entries(db, year=year, month=month, entry_type=entry_type, query=q)
 
 
 @router.get("/entries/{entry_id}", response_model=EntryDetail)

@@ -31,6 +31,19 @@ npm run dev
 
 Vite 将 `/api` 转发到 `127.0.0.1:8000`。筛选状态均保存在 URL query 中。
 
+### 没有个人日记时：使用演示数据
+
+仓库提供了完全虚构、可重复生成的演示数据库，方便首次体验界面、开发和截图；它不会读取或覆盖
+`.env` 配置的个人数据库：
+
+```bash
+python scripts/create_demo_data.py
+DATABASE_PATH="$(pwd)/data/demo_diary.db" python webapp-backend/app.py
+```
+
+默认生成 `data/demo_diary.db`。重复执行脚本会重建该演示文件；如需其他位置可传
+`--output /path/to/demo_diary.db`。
+
 浏览页默认每页 50 篇（`per_page` 可选 35 / 50 / 100），点进某个年份即可一屏看到 35 篇以上；
 年 / 月筛选是原生输入框 + 原生候选（`datalist`，候选来自 `/api/years` 与 `/api/months?year=`），
 非法值（如月份 13）在前端就被丢弃，不会传给后端。"过去的今天"用原生 `type="date"` 日期框
@@ -41,6 +54,8 @@ Vite 将 `/api` 转发到 `127.0.0.1:8000`。筛选状态均保存在 URL query 
 - `GET /api/years`
 - `GET /api/months?year=`
 - `GET /api/entries?year=&month=&entry_type=&q=&page=&per_page=`
+- `GET /api/entries/full?year=&month=&entry_type=&q=`：按筛选条件返回所有匹配日记的完整正文，不分页；
+  适用于浏览页“显示完整正文”模式，大范围查询可能产生较大响应。
 - `GET /api/entries/{id}`
 - `GET /api/on-this-day?month=&day=`：按年份分组返回该月日的日记（只带 120 字预览）。
 - `GET /api/random`：随机一天；`items[].content` 为该篇**完整正文**（"随机一天"页直接展示全文）。

@@ -2,10 +2,12 @@ import { apiGet, queryString } from './client'
 import type {
   EntryDetail,
   EntryPreview,
+  FullEntryListResponse,
   MonthStat,
   OnThisDayResponse,
   Page,
   RandomDayResponse,
+  StatisticsResponse,
   YearStat,
 } from './types'
 
@@ -18,7 +20,13 @@ export const getEntries = (
 ) => apiGet<Page<EntryPreview>>(`/api/entries${queryString(params)}`, { signal })
 export const getEntry = (id: string | number, signal?: AbortSignal) =>
   apiGet<EntryDetail>(`/api/entries/${id}`, { signal })
+export const getFullEntries = (
+  params: Record<string, string | number | undefined>,
+  signal?: AbortSignal,
+) => apiGet<FullEntryListResponse>(`/api/entries/full${queryString(params)}`, { signal })
 export const getOnThisDay = (month: number, day: number, signal?: AbortSignal) =>
   apiGet<OnThisDayResponse>(`/api/on-this-day?month=${month}&day=${day}`, { signal })
 export const getRandom = (signal?: AbortSignal) =>
   apiGet<RandomDayResponse>('/api/random', { signal })
+export const getStatistics = (signal?: AbortSignal) =>
+  apiGet<StatisticsResponse>('/api/statistics', { signal })

@@ -120,6 +120,16 @@ class WebApiTests(unittest.TestCase):
         self.assertEqual(body["query"], "旅行")
         self.assertEqual(body["items"][0]["date"], "2024-09-17")
 
+    def test_full_entries_returns_all_matching_content_without_pagination(self):
+        response = self.client.get("/api/entries/full", params={"year": 2024, "month": 9})
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["total"], 2)
+        self.assertEqual([item["date"] for item in body["items"]], ["2024-09-18", "2024-09-17"])
+        self.assertEqual(body["items"][0]["content"], "工作记录")
+        self.assertNotIn("page", body)
+
     def test_entries_empty_and_out_of_range_page_keep_pagination_shape(self):
         response = self.client.get("/api/entries", params={"q": "不存在", "page": 3})
 
@@ -155,6 +165,10 @@ class WebApiTests(unittest.TestCase):
 
         self.assertEqual(found.status_code, 200)
         self.assertEqual(found.json()["content"], "旅行与朋友聚会")
+        self.assertEqual(found.json()["previous_entry"], {"id": 2, "date": "2024-08-01", "entry_type": "note"})
+        self.assertEqual(found.json()["next_entry"], {"id": 4, "date": "2024-09-18", "entry_type": "diary"})
+        self.assertIsNone(self.client.get("/api/entries/1").json()["previous_entry"])
+        self.assertIsNone(self.client.get("/api/entries/4").json()["next_entry"])
         self.assertEqual(missing.status_code, 404)
         self.assertEqual(missing.json(), {"detail": "日记不存在"})
 
@@ -177,6 +191,20 @@ class WebApiTests(unittest.TestCase):
                 {"month": 9, "entries": 2, "words": 12},
             ],
         )
+
+    def test_statistics_returns_full_database_aggregates(self):
+        response = self.client.get("/api/statistics")
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["total_entries"], 4)
+        self.assertEqual(body["total_words"], 24)
+        self.assertEqual(body["average_words"], 6)
+        self.assertEqual(body["first_date"], "2023-09-17")
+        self.assertEqual(body["last_date"], "2024-09-18")
+        self.assertEqual(body["most_active_year"], {"year": 2024, "entries": 3, "words": 18})
+        self.assertEqual(body["longest_entry"], {"id": 3, "date": "2024-09-17", "entry_type": "diary", "word_count": 8})
+        self.assertEqual(body["most_repeated_date"], {"month": 9, "day": 17, "entries": 2})
 
     def test_on_this_day_groups_entries_by_year(self):
         response = self.client.get("/api/on-this-day", params={"month": 9, "day": 17})
