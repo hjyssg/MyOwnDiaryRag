@@ -102,7 +102,7 @@ export function SummariesPage() {
                 <time>{item.entry_date}</time>
                 <div>
                   <div className="summary-item-meta">
-                    <span className={`badge ${item.status}`}>{item.status}</span>
+                    {/* <span className={`badge ${item.status}`}>{item.status}</span> */}
                     {item.emotion && <span className="badge emotion">{item.emotion}</span>}
                   </div>
                   <p>{item.summary || '暂无有效摘要'}</p>

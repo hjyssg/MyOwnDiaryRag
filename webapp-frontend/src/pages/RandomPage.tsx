@@ -40,7 +40,6 @@ export function RandomPage() {
                     <small>{entry.word_count.toLocaleString()} 字</small>
                   </header>
                   <div className="content">{entry.content}</div>
-                  <Link to={`/entries/${entry.id}`}>沉浸阅读 →</Link>
                 </article>
               ))}
             </div>

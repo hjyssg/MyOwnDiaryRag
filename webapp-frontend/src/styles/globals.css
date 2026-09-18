@@ -609,7 +609,6 @@ button {
   font-weight: 400;
 }
 .random-entries .content {
-  max-height: 180px;
   overflow: auto;
   margin: 7px 0;
   font-size: 14px;
@@ -620,13 +619,7 @@ button {
   font-size: 12px;
   text-decoration: none;
 }
-/* 单篇日记：不截断、不内滚，直接用阅读版字号铺开展示全文 */
-.random-entries.single .content {
-  max-height: none;
-  overflow: visible;
-  margin: 9px 0 4px;
-  font: 16px/2.05 var(--serif);
-}
+
 .summary-overview {
   display: grid;
   grid-template-columns: 135px minmax(0, 1fr);
