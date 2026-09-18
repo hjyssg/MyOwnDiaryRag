@@ -1,4 +1,4 @@
-import { Form, Link, useLocation, useSearchParams } from 'react-router-dom'
+import { Form, Link, useSearchParams } from 'react-router-dom'
 import { getEntries, getFullEntries } from '../api/entries'
 import { yearMonthParams } from '../api/filters'
 import type { EntryPreview, FullEntry } from '../api/types'
@@ -6,6 +6,7 @@ import { EntryCard } from '../components/EntryCard'
 import { entryTypeLabel } from '../components/entryTypes'
 import { Pagination } from '../components/Pagination'
 import { EmptyState, ErrorState, LoadingState } from '../components/States'
+import { Switch } from '../components/Switch'
 import { YearMonthFilter } from '../components/YearMonthFilter'
 import { useApi } from '../hooks/useApi'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
@@ -49,7 +50,6 @@ function groupByMonth<T extends EntryPreview>(items: T[]) {
 export function BrowsePage() {
   useDocumentTitle('浏览日记')
   const [p, setSearchParams] = useSearchParams()
-  const location = useLocation()
   const key = p.toString()
   const fullMode = p.get('full') === '1'
   const params = buildParams(p)
@@ -77,14 +77,25 @@ export function BrowsePage() {
     next.delete('page')
     setSearchParams(next)
   }
+  /** 清除筛选：清空所有查询参数，回到默认视图（每页仍走 DEFAULT_PER_PAGE） */
+  const clearFilters = () => setSearchParams(new URLSearchParams())
   return (
     <div className="browse-page">
       <header className="page-intro">
         <h1>浏览日记</h1>
       </header>
       <Form className="filters">
-        <YearMonthFilter year={p.get('year') ?? ''} month={p.get('month') ?? ''} />
-        <select name="entry_type" defaultValue={p.get('entry_type') ?? ''}>
+        {/* 输入框保持非受控，但用 URL 值做 key：提交 / 清除筛选后输入框回填为当前生效值 */}
+        <YearMonthFilter
+          key={`year:${p.get('year') ?? ''}-month:${p.get('month') ?? ''}`}
+          year={p.get('year') ?? ''}
+          month={p.get('month') ?? ''}
+        />
+        <select
+          name="entry_type"
+          key={`entry_type:${p.get('entry_type') ?? ''}`}
+          defaultValue={p.get('entry_type') ?? ''}
+        >
           <option value="">全部类型</option>
           {ENTRY_TYPES.map(([value, label]) => (
             <option key={value} value={value}>
@@ -94,12 +105,17 @@ export function BrowsePage() {
         </select>
         <input
           name="q"
+          key={`q:${p.get('q') ?? ''}`}
           defaultValue={p.get('q') ?? ''}
           placeholder="搜索日记内容…"
           aria-label="搜索正文"
         />
         {!fullMode && (
-          <select name="per_page" defaultValue={p.get('per_page') ?? DEFAULT_PER_PAGE}>
+          <select
+            name="per_page"
+            key={`per_page:${p.get('per_page') ?? DEFAULT_PER_PAGE}`}
+            defaultValue={p.get('per_page') ?? DEFAULT_PER_PAGE}
+          >
             {PAGE_SIZES.map((n) => (
               <option key={n} value={n}>
                 {n} 篇/页
@@ -107,20 +123,13 @@ export function BrowsePage() {
             ))}
           </select>
         )}
-        <label className="full-toggle">
-          <input
-            type="checkbox"
-            name="full"
-            value="1"
-            checked={fullMode}
-            onChange={(event) => toggleFullMode(event.target.checked)}
-          />
+        <Switch name="full" checked={fullMode} onChange={toggleFullMode}>
           显示完整正文
-        </label>
+        </Switch>
         <button>搜索</button>
-        <Link className="clear" to={location.pathname}>
+        <button type="button" className="clear" onClick={clearFilters}>
           清除筛选
-        </Link>
+        </button>
         <small className="hint">留空表示不筛选；年份填写 4 位数字，月份填写 1–12。</small>
       </Form>
       {loading ? (

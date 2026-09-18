@@ -155,7 +155,7 @@ h2 {
   border-radius: 6px;
   background: rgba(252, 253, 254, 0.75);
 }
-.filters input,
+.filters input:not([type='checkbox']),
 .filters select {
   min-width: 92px;
   padding: 7px 10px;
@@ -169,7 +169,7 @@ h2 {
 .filters input[name='q'] {
   flex: 1 1 180px;
 }
-.filters input:focus,
+.filters input:not([type='checkbox']):focus,
 .filters select:focus {
   border-color: #7694ac;
   box-shadow: 0 0 0 2px #e5eef5;
@@ -184,10 +184,16 @@ button {
   font-size: 13px;
 }
 .filters .clear {
-  padding: 5px;
-  color: var(--muted);
-  font-size: 12px;
-  text-decoration: none;
+  padding: 7px 14px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--paper);
+  color: #355069;
+  font-size: 13px;
+}
+.filters .clear:hover {
+  border-color: #7694ac;
+  background: var(--accent-soft);
 }
 .filters .hint {
   flex-basis: 100%;
@@ -802,21 +808,64 @@ button {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.full-toggle {
+.switch {
   display: inline-flex;
+  flex: none;
   align-items: center;
-  gap: 5px;
+  gap: 7px;
   color: #51697f;
   font-size: 12px;
   white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
 }
-.full-toggle input {
+.switch-input {
+  position: absolute;
   box-sizing: border-box;
-  width: 14px;
-  height: 14px;
+  width: 1px;
+  height: 1px;
   margin: 0;
   padding: 0;
-  accent-color: var(--accent);
+  overflow: hidden;
+  border: 0;
+  clip-path: inset(50%);
+  opacity: 0;
+}
+.switch-track {
+  position: relative;
+  flex: none;
+  box-sizing: border-box;
+  width: 34px;
+  height: 18px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #e7edf3;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease;
+}
+.switch-track::before {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(20, 38, 59, 0.28);
+  transition: transform 0.15s ease;
+}
+.switch-input:checked + .switch-track {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+.switch-input:checked + .switch-track::before {
+  transform: translateX(16px);
+}
+.switch-input:focus-visible + .switch-track {
+  outline: 2px solid #7694ac;
+  outline-offset: 2px;
 }
 .full-entry {
   padding: 14px 0;
@@ -984,7 +1033,7 @@ button {
   .filters {
     align-items: stretch;
   }
-  .filters input,
+  .filters input:not([type='checkbox']),
   .filters select {
     width: 100%;
   }

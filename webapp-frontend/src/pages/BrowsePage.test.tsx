@@ -142,7 +142,9 @@ describe('浏览页分页与筛选', () => {
         const url = String(input)
         calls.push(url)
         return Promise.resolve(
-          new Response(JSON.stringify(url.includes('/api/entries/full') ? fullEntries : entriesPage)),
+          new Response(
+            JSON.stringify(url.includes('/api/entries/full') ? fullEntries : entriesPage),
+          ),
         )
       }),
     )
@@ -157,5 +159,67 @@ describe('浏览页分页与筛选', () => {
     expect(fullCall).toBeDefined()
     expect(fullCall).toContain('year=2024')
     expect(fullCall).not.toContain('page=2')
+  })
+
+  it('开关是独立控件：不继承筛选输入框的尺寸类名', async () => {
+    stubFetch()
+    renderPage('/browse?year=2024')
+
+    await screen.findByText('旅行与朋友聚会')
+    const toggle = screen.getByRole('checkbox', { name: '显示完整正文' })
+    expect(toggle).toHaveClass('switch-input')
+    expect(toggle.closest('label')).toHaveClass('switch')
+    expect(toggle).not.toHaveAttribute('placeholder')
+  })
+
+  it('清除筛选按钮清空全部查询参数并回到未筛选列表', async () => {
+    const calls = stubFetch()
+    const user = userEvent.setup()
+    renderPage('/browse?year=2024&month=9&q=%E6%97%85%E8%A1%8C&per_page=100&page=2')
+
+    await screen.findByText('旅行与朋友聚会')
+    const clear = screen.getByRole('button', { name: '清除筛选' })
+    await user.click(clear)
+
+    const clearedCall = calls.find((url) => url.includes('/api/entries?') && !url.includes('year='))
+    expect(clearedCall).toBeDefined()
+    const clearedParams = new URLSearchParams(clearedCall?.split('?')[1] ?? '')
+    expect(clearedParams.get('per_page')).toBe('50')
+    expect(clearedParams.get('month')).toBeNull()
+    expect(clearedParams.get('q')).toBeNull()
+    expect(clearedParams.get('page')).toBeNull()
+    expect(clearedParams.get('full')).toBeNull()
+    const yearInput = document.querySelector('input[name="year"]') as HTMLInputElement
+    expect(yearInput.value).toBe('')
+  })
+
+  it('清除筛选按钮在完整正文模式下同时关闭开关', async () => {
+    const fullEntries = {
+      total: 1,
+      items: [{ ...entriesPage.items[0], content: '完整正文内容。' }],
+      year: 2024,
+      month: null,
+      entry_type: null,
+      query: null,
+    }
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL) => {
+        const url = String(input)
+        return Promise.resolve(
+          new Response(
+            JSON.stringify(url.includes('/api/entries/full') ? fullEntries : entriesPage),
+          ),
+        )
+      }),
+    )
+    const user = userEvent.setup()
+    renderPage('/browse?year=2024&full=1')
+
+    expect(await screen.findByText('完整正文内容。')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '清除筛选' }))
+
+    expect(await screen.findByText('旅行与朋友聚会')).toBeInTheDocument()
+    expect(screen.getByRole('checkbox', { name: '显示完整正文' })).not.toBeChecked()
   })
 })
