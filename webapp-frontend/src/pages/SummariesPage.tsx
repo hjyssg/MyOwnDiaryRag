@@ -40,7 +40,7 @@ export function SummariesPage() {
   return (
     <div className="summaries-page">
       <header className="page-intro">
-        <h1>AI 人生摘要</h1>
+        <h1>AI摘要</h1>
       </header>
       <Form className="filters">
         <YearMonthFilter year={p.get('year') ?? ''} month={p.get('month') ?? ''} />

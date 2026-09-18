@@ -97,11 +97,9 @@ export function OnThisDayPage() {
                   {g.year}
                   <small>年</small>
                 </h2>
-                <div>
-                  {g.items.map((e) => (
-                    <EntryCard key={e.id} entry={e} />
-                  ))}
-                </div>
+                {g.items.map((e) => (
+                  <EntryCard key={e.id} entry={e} />
+                ))}
               </section>
             ))}
           </div>

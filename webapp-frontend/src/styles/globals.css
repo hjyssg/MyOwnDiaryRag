@@ -341,67 +341,51 @@ button {
   border-bottom: 1px solid #e7edf2;
   font-size: 23px;
 }
-.timeline-entry {
-  display: grid;
-  grid-template-columns: 53px 1px minmax(0, 1fr);
-  column-gap: 13px;
-  min-height: 67px;
+/* 一条日记：左日期 + 右正文，用 flex 两列，不用 grid */
+.entry-card {
+  display: flex;
+  gap: 13px;
+  padding: 10px 0 12px;
+  border-bottom: 1px solid #eef2f5;
 }
-.timeline-date {
-  padding-top: 9px;
+.entry-card-date {
+  flex: 0 0 53px; /* 固定宽度，不伸缩 */
   text-align: right;
 }
-.timeline-date time {
+.entry-card-date time {
   display: block;
   font: 20px/1 var(--serif);
 }
-.timeline-date small {
+.entry-card-date small {
   display: block;
   color: var(--muted);
   font-size: 10px;
 }
-.timeline-date .tag {
+.entry-card-date .tag {
   margin-top: 3px;
   padding: 1px 5px;
   font-size: 9px;
 }
-.timeline-line {
-  position: relative;
-  background: var(--line);
-}
-.timeline-line:before {
-  position: absolute;
-  top: 15px;
-  left: -3px;
-  width: 7px;
-  height: 7px;
-  border: 1px solid #547899;
-  border-radius: 50%;
-  background: var(--paper);
-  content: '';
-}
-.entry-copy {
+/* min-width: 0 是 flex 的必要一行：不加的话子项由内容撑开，长文本不会正常换行 */
+.entry-card-body {
+  flex: 1 1 auto;
   min-width: 0;
-  padding: 7px 0 11px;
 }
-.entry-copy p {
-  display: -webkit-box;
-  overflow: hidden;
-  margin: 1px 0 0;
+/* 预览文字后端已截到 120 字（database.py 的 PREVIEW_LEN），这里只管排版 */
+.entry-card-body p {
+  margin: 0;
   color: var(--muted);
   font-size: 12px;
   line-height: 1.45;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
 }
-.entry-read-link {
+.entry-card-body a {
   display: inline-block;
   margin-top: 3px;
   color: #42647e;
   font-size: 10px;
   text-decoration: none;
 }
-.entry-read-link:hover {
+.entry-card-body a:hover {
   color: var(--accent);
   text-decoration: underline;
 }
@@ -542,41 +526,19 @@ button {
 .memory-timeline {
   margin-top: 18px;
 }
+/* “过去的今天”按年份分组：竖线用 border-left，不再需要空的装饰 div */
 .memory-year {
-  display: grid;
-  grid-template-columns: 77px minmax(0, 1fr);
+  margin-top: 22px;
 }
 .memory-year > h2 {
-  position: relative;
-  margin: 0;
-  padding: 2px 14px 0 0;
-  border-right: 1px solid var(--line);
-  font-size: 22px;
-  text-align: right;
-}
-.memory-year > h2:after {
-  position: absolute;
-  z-index: 1;
-  top: 13px;
-  right: -3px;
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: #2b5a80;
-  content: '';
+  margin: 0 0 6px;
+  padding: 0 0 4px 10px;
+  border-left: 3px solid var(--accent);
+  border-bottom: 1px solid #e7edf2;
+  font-size: 21px;
 }
 .memory-year > h2 small {
   font: 11px sans-serif;
-}
-.memory-year > div {
-  padding-left: 17px;
-}
-.memory-year .timeline-entry {
-  grid-template-columns: 0 0 minmax(0, 1fr);
-}
-.memory-year .timeline-date,
-.memory-year .timeline-line {
-  display: none;
 }
 .random-page {
   max-width: 700px;
@@ -1026,9 +988,11 @@ button {
   .filters select {
     width: 100%;
   }
-  .timeline-entry {
-    grid-template-columns: 48px 1px minmax(0, 1fr);
-    column-gap: 10px;
+  .entry-card {
+    gap: 10px;
+  }
+  .entry-card-date {
+    flex-basis: 48px;
   }
   .reflection-intro {
     margin-bottom: 15px;
