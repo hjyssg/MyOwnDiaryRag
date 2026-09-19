@@ -630,24 +630,30 @@ button {
   text-decoration: none;
 }
 
+/* 概览带：年份 + 篇数 + 情绪分布横向排开，占满整行宽度 */
 .summary-overview {
-  display: grid;
-  grid-template-columns: 135px minmax(0, 1fr);
-  gap: 22px;
-  margin: 22px 0;
-  padding-bottom: 18px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 26px;
+  align-items: center;
+  margin: 18px 0;
+  padding-bottom: 14px;
   border-bottom: 1px solid var(--line);
 }
+.overview-head {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  white-space: nowrap;
+}
 .overview-year {
-  display: block;
-  font: 30px var(--serif);
+  font: 30px/1.1 var(--serif);
 }
 .summary-overview small {
   color: var(--muted);
   font-size: 11px;
 }
 .summary-overview h2,
-.emotion-distribution h2,
 .summary-list > h2 {
   margin: 0;
   font-size: 16px;
@@ -658,7 +664,8 @@ button {
   font-size: 13px;
 }
 .emotion-distribution {
-  margin-bottom: 24px;
+  flex: 1 1 300px;
+  min-width: 220px;
 }
 .emotion-bar {
   display: flex;
@@ -694,20 +701,25 @@ button {
   padding-bottom: 6px;
   border-bottom: 1px solid var(--line);
 }
+/* 摘要列表：一行一篇，四列对齐（日期 / 情绪 / 摘要 / 查看），摘要单行省略 */
 .summary-item {
   display: grid;
-  grid-template-columns: 100px minmax(0, 1fr);
-  gap: 14px;
-  padding: 13px 0;
+  grid-template-columns: 92px 62px minmax(0, 1fr) 40px;
+  gap: 12px;
+  align-items: baseline;
+  padding: 9px 6px;
   border-bottom: 1px solid #e8edf1;
+}
+.summary-item:hover {
+  background: #f7fafc;
 }
 .summary-item > time {
   color: #526a80;
   font: 14px var(--serif);
+  white-space: nowrap;
 }
-.summary-item-meta {
-  display: flex;
-  gap: 5px;
+.summary-item > .badge.emotion {
+  justify-self: start;
 }
 .badge {
   border-radius: 3px;
@@ -718,20 +730,32 @@ button {
 .badge.emotion {
   background: #e8eef5;
 }
+.badge.emotion.is-empty {
+  background: transparent;
+  color: var(--muted);
+}
 .badge.failed,
 .badge.stale {
   background: #f3e6e5;
 }
 .summary-item p {
-  margin: 4px 0;
+  overflow: hidden;
+  margin: 0;
   font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.summary-item small {
-  color: var(--muted);
-  font-size: 10px;
-}
-.summary-item small a {
+.summary-item > a {
   color: #42647e;
+  font-size: 12px;
+  text-align: right;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.summary-item > a:hover {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 .stat-kpis {
   display: grid;
@@ -1088,8 +1112,12 @@ button {
   .random-entries.single .content {
     font-size: 15px;
   }
-  .summary-overview,
-  .summary-item,
+  /* 摘要概览带是 flex，靠自动换行自适应；列表仍保持一行，只收窄日期 / 情绪 / 操作列 */
+  .summary-item {
+    grid-template-columns: 80px 54px minmax(0, 1fr) 34px;
+    gap: 8px;
+    padding: 9px 0;
+  }
   .statistics-grid,
   .stat-facts {
     grid-template-columns: 1fr;

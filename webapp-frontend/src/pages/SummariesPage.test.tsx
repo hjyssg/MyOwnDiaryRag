@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import { createMemoryRouter, RouterProvider } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SummariesPage } from './SummariesPage'
@@ -39,17 +39,19 @@ function bodyFor(url: string) {
   if (url.includes('/api/months')) return months
   return summary
 }
+const json = (body: unknown) =>
+  Promise.resolve(
+    new Response(JSON.stringify(body), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }),
+  )
 function stubFetch() {
   const calls: string[] = []
   const impl = (input: RequestInfo | URL) => {
     const url = String(input)
     calls.push(url)
-    return Promise.resolve(
-      new Response(JSON.stringify(bodyFor(url)), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      }),
-    )
+    return json(bodyFor(url))
   }
   vi.stubGlobal('fetch', vi.fn(impl))
   return calls
@@ -100,5 +102,39 @@ describe('摘要页情绪筛选', () => {
       '随手记',
     ])
     expect(calls.some((url) => url.includes('entry_type=note'))).toBe(true)
+  })
+})
+
+describe('摘要页列表布局', () => {
+  it('一行一篇：日期 / 情绪 / 摘要 / 「查看」链接，元信息收进 title 提示', async () => {
+    stubFetch()
+    renderPage()
+    expect(await screen.findByText('被同事甩锅')).toBeInTheDocument()
+
+    const row = document.querySelector('.summary-item') as HTMLElement
+    expect(row.querySelector('time')?.textContent).toBe('2024-09-17')
+    // 字数 / 类型 / 模型 / 生成时间不再单独占行，改为悬停提示
+    expect(row.querySelector('time')?.getAttribute('title')).toBe(
+      '随记 · 6 字 · m · 2026-01-01T00:00:00',
+    )
+    expect(row.querySelector('p')?.textContent).toBe('被同事甩锅')
+    const link = within(row).getByRole('link', { name: '查看' })
+    expect(link).toHaveAttribute('href', '/entries/1')
+    expect(screen.queryByText('查看原文')).not.toBeInTheDocument()
+  })
+  it('没有原文入口的行不留空链接（仅日期 / 情绪 / 摘要三格）', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url.includes('/api/summaries/emotions')) return json(emotions)
+        if (url.includes('/api/years')) return json(years)
+        if (url.includes('/api/months')) return json(months)
+        return json({ ...summary, items: [{ ...summary.items[0], entry_id: null }] })
+      }),
+    )
+    renderPage()
+    expect(await screen.findByText('被同事甩锅')).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: '查看' })).not.toBeInTheDocument()
   })
 })

@@ -2,6 +2,7 @@ import { Form, Link, useSearchParams } from 'react-router-dom'
 import { yearMonthParams } from '../api/filters'
 import { getEmotionLabels, getSummaries } from '../api/summaries'
 import { EntryTypeFilter } from '../components/EntryTypeFilter'
+import { entryTypeLabel } from '../components/entryTypes'
 import { Pagination } from '../components/Pagination'
 import { EmptyState, ErrorState, LoadingState } from '../components/States'
 import { YearMonthFilter } from '../components/YearMonthFilter'
@@ -74,44 +75,54 @@ export function SummariesPage() {
       ) : (
         <>
           <section className="summary-overview">
-            <div>
-              <span className="overview-year">{year ?? '全部'}</span>
+            <div className="overview-head">
+              <span className="overview-year">{year ? `${year} 年` : '全部年份'}</span>
               <small>{data.total} 篇摘要</small>
             </div>
+            {emotionTotal > 0 && (
+              <div className="emotion-distribution">
+                <div className="emotion-bar" aria-label="当前摘要的情绪分布">
+                  {Object.entries(emotionCounts).map(([emotion, count]) => (
+                    <span key={emotion} style={{ flex: count }} title={`${emotion} ${count} 篇`} />
+                  ))}
+                </div>
+                <div className="emotion-key">
+                  {Object.entries(emotionCounts).map(([emotion, count]) => (
+                    <span key={emotion}>
+                      {emotion} {Math.round((count / emotionTotal) * 100)}%
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
           </section>
-          {emotionTotal > 0 && (
-            <section className="emotion-distribution">
-              <h2>情绪分布</h2>
-              <div className="emotion-bar" aria-label="当前摘要的情绪分布">
-                {Object.entries(emotionCounts).map(([emotion, count]) => (
-                  <span key={emotion} style={{ flex: count }} title={`${emotion} ${count} 篇`} />
-                ))}
-              </div>
-              <div className="emotion-key">
-                {Object.entries(emotionCounts).map(([emotion, count]) => (
-                  <span key={emotion}>
-                    {emotion} {Math.round((count / emotionTotal) * 100)}%
-                  </span>
-                ))}
-              </div>
-            </section>
-          )}
           <section className="summary-list" aria-label="日记摘要列表">
             <h2>摘要记录</h2>
             {data.items.map((item) => (
               <article className="summary-item" key={item.entry_key}>
-                <time>{item.entry_date}</time>
-                <div>
-                  <div className="summary-item-meta">
-                    {/* <span className={`badge ${item.status}`}>{item.status}</span> */}
-                    {item.emotion && <span className="badge emotion">{item.emotion}</span>}
-                  </div>
-                  <p>{item.summary || '暂无有效摘要'}</p>
-                  <small>
-                    {item.model} · {item.generated_at} ·{' '}
-                    {item.entry_id && <Link to={`/entries/${item.entry_id}`}>查看原文</Link>}
-                  </small>
-                </div>
+                {/* 一行一篇：日期 / 情绪 / 摘要（单行省略）/ 查看；类型·字数·模型·生成时间收进 title 提示 */}
+                <time
+                  dateTime={item.entry_date ?? undefined}
+                  title={[
+                    item.entry_type ? entryTypeLabel(item.entry_type) : '',
+                    item.word_count ? `${item.word_count} 字` : '',
+                    item.model,
+                    item.generated_at,
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')}
+                >
+                  {item.entry_date}
+                </time>
+                <span className={item.emotion ? 'badge emotion' : 'badge emotion is-empty'}>
+                  {item.emotion || '—'}
+                </span>
+                <p title={item.summary}>{item.summary || '暂无有效摘要'}</p>
+                {item.entry_id ? (
+                  <Link to={`/entries/${item.entry_id}`}>查看</Link>
+                ) : (
+                  <span aria-hidden="true" />
+                )}
               </article>
             ))}
           </section>
