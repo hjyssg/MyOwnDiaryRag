@@ -52,7 +52,8 @@ webapp-frontend/vite.config.d.ts
 *.swo
 *~
 
-# 日记批量总结产物（含日记内容，不入库）
+# 日记批量总结产物（含日记内容，不入库）：输出在项目根目录的 output/
+/output/
 batch_summary/output/
 
 # OS

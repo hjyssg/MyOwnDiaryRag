@@ -123,12 +123,13 @@ class PreviewRenderTests(unittest.TestCase):
             make_record(3, "2016-03-05", "换了新工作。"),
         ]
         preview = render.render_preview(records, processed=3, total=3, phase="done", now=NOW)
-        final = render.render_markdown(records)
+        final = render.render_markdown(records, now=NOW)
         expected = render.render_sections(records)
         self.assertEqual(preview, final)                       # 跑完 -> 与最终版完全相同
-        self.assertEqual(preview.splitlines()[4:], expected)    # 标题 + 固定说明 + 正文
+        self.assertEqual(preview.splitlines()[5:], expected)    # 标题 + 说明 + 生成日期 + 正文
         self.assertTrue(preview.startswith("# 日记总结\n"))
         self.assertNotIn("中途预览", preview)
+        self.assertIn("> 生成日期：2026-09-16 12:03", preview)  # 最终版标记生成日期
         self.assertIn("- 0120 整理旧照片。", preview)
         self.assertIn("- 0710 去郊外旅游。", preview)
         self.assertIn("- 0305 换了新工作。", preview)
@@ -140,10 +141,10 @@ class PreviewRenderTests(unittest.TestCase):
             make_record(2, "2015-07-10", "去郊外旅游。") | {"emotion": "快乐"},
         ]
         preview = render.render_preview(records, processed=2, total=2, phase="done", now=NOW)
-        final = render.render_markdown(records)
+        final = render.render_markdown(records, now=NOW)
         expected = render.render_sections(records)
         self.assertEqual(preview, final)
-        self.assertEqual(preview.splitlines()[4:], expected)
+        self.assertEqual(preview.splitlines()[5:], expected)
         self.assertIn("- 0120【平淡】整理旧照片。", preview)
         self.assertIn("- 0710【快乐】去郊外旅游。", preview)
 

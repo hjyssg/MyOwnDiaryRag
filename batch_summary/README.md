@@ -11,8 +11,10 @@ python batch_summary/main.py --test --samples 10   # 抽样试跑：只打印，
 python batch_summary/main.py --all                 # 全量（可 Ctrl+C，重跑自动续跑）
 ```
 
-产物只有一个文件：`output/YYMMDDHHMMSS/中途预览.md`
-（运行期间每 60 秒刷新一次，跑完重写成最终版）。
+产物只有一个文件：项目根目录下的 `output/中途预览.md`
+—— 就在仓库最外层（与 `scripts/`、`webapp-*/` 平级），每次运行覆盖同一个文件。
+运行期间每 60 秒刷新一次（可随时打开看进度）；跑完 / 中断时重写成最终版，
+标题变成 `# 日记总结` 并在头部标记**生成日期**。
 
 ## 常用命令
 

@@ -41,8 +41,8 @@ ROOT_DIR = BASE_DIR.parent                           # 项目根目录
 
 # ---------------- 输入 / 输出路径 ----------------
 PROMPT_FILE = BASE_DIR / "prompts" / "diary_summary_prompt.txt"
-OUTPUT_DIR = BASE_DIR / "output"
-# 每次运行的产物放在 output/YYMMDDHHMMSS/ 子目录里，互不覆盖，便于回头对比
+# 产物写在**项目根目录**的 output/ 里（与 scripts/、webapp-*/ 平级），不在 batch_summary/ 下
+OUTPUT_DIR = ROOT_DIR / "output"
 RUN_DIR_FORMAT = "%y%m%d%H%M%S"
 PREVIEW_FILE_NAME = "中途预览.md"            # 唯一产物（运行期=快照，跑完=最终版）
 
@@ -55,7 +55,7 @@ HEARTBEAT_MIN_SECONDS = 5
 # ---------------- 唯一产物：中途预览.md ----------------
 # 全量跑要几小时，所以运行期间就持续维护这份"截至当前"的目录（节流刷新，可 --preview-every
 # 覆盖，.env 亦可用 SUMMARY_PREVIEW_SECONDS 覆盖），随时打开就能看到已总结完的部分；
-# 跑完 / 中断时把同一个文件重写为最终版（标题变成 # 日记总结）。
+# 跑完 / 中断时把同一个文件重写为最终版（标题变成 # 日记总结，并写入生成日期）。
 # 除此之外不生成任何文件（无 summaries.json / progress.json / 运行状态.txt / 日志 / 待复核清单）。
 PREVIEW_EVERY_SECONDS = 60                   # 每隔多少秒刷新一次（0 = 关闭）
 PREVIEW_MIN_SECONDS = 5                      # 刷新间隔下限，防止把磁盘写爆

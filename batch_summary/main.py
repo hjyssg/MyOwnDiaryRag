@@ -16,11 +16,11 @@
     python batch_summary/main.py --years 2015-2019    # 分年跑
     python batch_summary/main.py --rebuild-md         # 不调模型，用已有摘要重写预览
 
-产物：**只有一个文件** —— 本次运行目录里的 中途预览.md
+产物：**只有一个文件** —— 中途预览.md，写在项目根目录的 output/ 里（每次运行覆盖）
 
-    output/YYMMDDHHMMSS/中途预览.md
+    output/中途预览.md
         运行期间：每 N 秒刷新一次的"截至当前"目录（随时可打开）
-        跑完/中断：同一个文件被重写为最终版（标题变成 # 日记总结）
+        跑完/中断：同一个文件被重写为最终版（标题变成 # 日记总结，并标记生成日期）
 
 除此之外不再生成任何中间文件（无 summaries.json / progress.json / 运行状态.txt /
 待复核清单 / 日志文件）。断点续跑状态在 SQLite（entry_summaries 表），跨运行共享。
@@ -129,7 +129,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--output-dir",
-        help="输出根目录（默认 batch_summary/output）；产物放在其下的 YYMMDDHHMMSS 子目录里",
+        help="输出根目录（默认：项目根目录下的 output/）；「中途预览.md」直接写在这里",
     )
     parser.add_argument(
         "--flat-output",
@@ -1178,8 +1178,8 @@ def main(argv=None) -> int:
         print("\n请选择一个动作：--models / --test / --all / --rebuild-md / --reset-summaries")
         return EXIT_ERROR
 
-    # --models / --test 不写产物，就不建时间戳子目录（--test 结束时也不会留下空目录）
-    paths = resolve_paths(args, timestamped=not (args.models or args.test or args.reset_summaries))
+    # 产物固定写在输出根目录（默认：项目根目录下的 output/），不建时间戳子目录
+    paths = resolve_paths(args, timestamped=False)
     try:
         settings = bs_config.get_settings()
     except RuntimeError as exc:

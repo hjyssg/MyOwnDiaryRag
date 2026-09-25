@@ -7,6 +7,7 @@
     # 日记总结
 
     > 每篇日记一段摘要；日期取自日记本身的日期（MMDD），【】里是情绪标签（未判断时省略）。同一天有多篇日记时各占一行。
+    > 生成日期：2026-09-26 02:48
 
     ## 2015年
 
@@ -30,6 +31,9 @@ from typing import Dict, List, Optional
 DEFAULT_TITLE = "# 日记总结"
 UNKNOWN_LABEL = "日期不详"
 HEADER_NOTE = "> 每篇日记一段摘要；日期取自日记本身的日期（MMDD），【】里是情绪标签（未判断时省略）。同一天有多篇日记时各占一行。"
+# 最终产物第二行：本文件是什么时候生成的（跑完 / --rebuild-md 时写入）
+GENERATED_NOTE = "> 生成日期：{stamp}"
+GENERATED_STAMP_FORMAT = "%Y-%m-%d %H:%M"
 
 _DAY_RE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})")
 _MONTH_RE = re.compile(r"^(\d{4})-(\d{2})")
@@ -97,9 +101,22 @@ def render_sections(records: List[Dict]) -> List[str]:
     return lines
 
 
-def render_markdown(records: List[Dict], title: str = DEFAULT_TITLE) -> str:
-    """生成最终版文本（跑完后用它重写「中途预览.md」）"""
-    lines = [title.strip(), "", HEADER_NOTE, ""] + render_sections(records)
+def generated_note(now=None) -> str:
+    """最终产物里的「生成日期」那一行（如 ``> 生成日期：2026-09-26 02:48``）
+
+    ``now`` 传固定时间即可得到确定的文本（测试用）；不传则取当前时间。
+    """
+    stamp = (now or datetime.now()).strftime(GENERATED_STAMP_FORMAT)
+    return GENERATED_NOTE.format(stamp=stamp)
+
+
+def render_markdown(records: List[Dict], title: str = DEFAULT_TITLE, *, now=None) -> str:
+    """生成最终版文本（跑完后用它重写「中途预览.md」）
+
+    头部固定两行引用：格式说明 + 「生成日期」（``now`` 只影响后者，
+    不传就取当前时间；测试传固定值即可断言逐字一致）。
+    """
+    lines = [title.strip(), "", HEADER_NOTE, generated_note(now), ""] + render_sections(records)
     return "\n".join(lines).rstrip() + "\n"
 
 
@@ -179,10 +196,11 @@ def render_preview(
     """生成「中途预览.md」文本
 
     * ``phase="running" / "interrupted"``：进度头 + 正文（运行期间节流刷新）；
-    * ``phase="done"``：直接返回最终版（与 :func:`render_markdown` 逐字一致）。
+    * ``phase="done"``：直接返回最终版（与 :func:`render_markdown` 逐字一致，
+      「生成日期」同样取传进来的 ``now``）。
     """
     if phase == "done":
-        return render_markdown(records)
+        return render_markdown(records, now=now)
     header = preview_header(
         processed=processed, total=total, current=current,
         phase=phase, every=every, now=now,

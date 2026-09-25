@@ -11,6 +11,7 @@
 
 import sys
 import unittest
+from datetime import datetime
 from pathlib import Path
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
@@ -29,6 +30,7 @@ from batch_summary.llm import (  # noqa: E402
 )
 
 TEMPLATE = "日期：{DATE} 类型：{ENTRY_TYPE}\n{CONTENT}"
+NOW = datetime(2026, 9, 16, 12, 3, 41)          # 固定「现在」，让「生成日期」可逐字断言
 
 
 def make_entry(**overrides):
@@ -298,14 +300,31 @@ class RenderTests(unittest.TestCase):
         ]
         expected = "\n".join([
             "# 日记总结", "",
-            render.HEADER_NOTE, "",
+            render.HEADER_NOTE,
+            render.generated_note(NOW), "",
             "## 2015年", "",
             "- 0120 周末去公园散步。",
             "- 0710 去郊外玩了三天。", "",
             "## 2016年", "",
             "- 0305 换了新工作。",
         ]) + "\n"
-        self.assertEqual(render.render_markdown(records), expected)
+        self.assertEqual(render.render_markdown(records, now=NOW), expected)
+
+    def test_markdown_marks_generation_date(self):
+        """最终产物头部标记生成日期（日期 + 时分）；运行期预览仍是「截至…」进度头"""
+        records = [make_record(1, "2015-01-20", "周末去公园散步。")]
+        markdown = render.render_markdown(records, now=NOW)
+        self.assertIn("> 生成日期：2026-09-16 12:03", markdown)
+        self.assertIn("> 生成日期：2026-09-16 12:03", markdown.splitlines()[3])
+        # 不传 now 时取当前时间（格式正确即可）
+        self.assertRegex(
+            render.render_markdown(records).splitlines()[3],
+            r"^> 生成日期：\d{4}-\d{2}-\d{2} \d{2}:\d{2}$",
+        )
+        # 运行中的预览头是「截至 HH:MM:SS」，不写生成日期
+        preview = render.render_preview(records, processed=1, total=1, now=NOW)
+        self.assertIn("> 截至 12:03:41", preview)
+        self.assertNotIn("生成日期", preview)
 
     def test_same_day_entries_each_get_a_line(self):
         records = [
@@ -320,7 +339,8 @@ class RenderTests(unittest.TestCase):
         records = [make_record(1, "2015-01-20", ""), make_record(2, "2015-01-21", "   ")]
         self.assertEqual(render.render_sections(records), [])
         self.assertEqual(
-            render.render_markdown(records), "# 日记总结\n\n" + render.HEADER_NOTE + "\n"
+            render.render_markdown(records, now=NOW),
+            "# 日记总结\n\n" + render.HEADER_NOTE + "\n" + render.generated_note(NOW) + "\n",
         )
 
     def test_markdown_shows_emotion_label(self):
