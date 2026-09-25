@@ -296,7 +296,7 @@ class RunDirTests(unittest.TestCase):
     def test_resolve_paths_keeps_one_artifact_in_run_dir(self):
         args = type("A", (), {"output_dir": str(self.tmp), "flat_output": False})()
         paths = bs_main.resolve_paths(args)
-        self.assertEqual(sorted(paths), ["base_dir", "dir", "preview"])   # 只有这一个产物
+        self.assertEqual(sorted(paths), ["base_dir", "dir", "final", "preview"])
         self.assertNotEqual(paths["dir"], self.tmp)                        # 产物进时间戳子目录
         self.assertEqual(paths["preview"].parent, paths["dir"])
         self.assertEqual(paths["preview"].name, bs_config.PREVIEW_FILE_NAME)

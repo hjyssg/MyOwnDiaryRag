@@ -362,14 +362,39 @@ class PreviewCliTests(unittest.TestCase):
     def test_resolve_paths_has_preview_as_the_only_output(self):
         args = type("A", (), {"output_dir": str(self.tmp), "flat_output": False})()
         paths = bs_main.resolve_paths(args)
-        self.assertEqual(sorted(paths), ["base_dir", "dir", "preview"])   # 只有这一个产物
+        self.assertEqual(sorted(paths), ["base_dir", "dir", "final", "preview"])
         self.assertEqual(paths["preview"].parent, paths["dir"])
         self.assertEqual(paths["preview"].name, bs_config.PREVIEW_FILE_NAME)
+        self.assertEqual(paths["final"].parent, paths["dir"])
+        self.assertEqual(paths["final"].name, bs_config.FINAL_FILE_NAME)
 
         flat = bs_main.resolve_paths(args, timestamped=False)
         self.assertEqual(
             flat["preview"].resolve(), (self.tmp / bs_config.PREVIEW_FILE_NAME).resolve()
         )
+
+    def test_promote_to_final_renames_preview(self):
+        """跑完：中途预览.md 改名成 日记总结.md（中断时不改名，见 cmd_all）"""
+        paths = {
+            "preview": self.tmp / bs_config.PREVIEW_FILE_NAME,
+            "final": self.tmp / bs_config.FINAL_FILE_NAME,
+        }
+        self.assertIsNone(bs_main.promote_to_final(paths))        # 还没有产物 -> 什么都不做
+        paths["preview"].write_text("# 日记总结\n", encoding="utf-8")
+        self.assertEqual(bs_main.promote_to_final(paths), paths["final"])
+        self.assertFalse(paths["preview"].exists())               # 中途预览不再留下
+        self.assertEqual(paths["final"].read_text(encoding="utf-8"), "# 日记总结\n")
+
+    def test_promote_to_final_overwrites_previous_final(self):
+        """上一轮的最终版会被本轮的覆盖（改名而不是追加）"""
+        paths = {
+            "preview": self.tmp / bs_config.PREVIEW_FILE_NAME,
+            "final": self.tmp / bs_config.FINAL_FILE_NAME,
+        }
+        paths["final"].write_text("上一轮\n", encoding="utf-8")
+        paths["preview"].write_text("这一轮\n", encoding="utf-8")
+        bs_main.promote_to_final(paths)
+        self.assertEqual(paths["final"].read_text(encoding="utf-8"), "这一轮\n")
 
     def test_parser_has_preview_flags(self):
         parser = bs_main.build_parser()

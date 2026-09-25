@@ -3,7 +3,7 @@
 """日记批量总结 - 入口脚本
 
 用本地 LM Studio 模型逐篇阅读 SQLite 中的日记，为**每一篇**写一段摘要，
-生成一份「中途预览.md」。全程本地运行，数据库只读，原始日记不修改。
+生成一份《日记总结.md》（运行期间先叫「中途预览.md」）。全程本地运行，数据库只读，原始日记不修改。
 
 本功能刻意不让本地模型做判断：模型只负责"把这篇日记写成一段摘要"，
 既不筛"重要/不重要"，也不负责日期或标题——因此每一篇都会产出摘要。
@@ -16,11 +16,11 @@
     python batch_summary/main.py --years 2015-2019    # 分年跑
     python batch_summary/main.py --rebuild-md         # 不调模型，用已有摘要重写预览
 
-产物：**只有一个文件** —— 中途预览.md，写在项目根目录的 output/ 里（每次运行覆盖）
+产物：**只有一个文件**（写在项目根目录的 output/ 里，每次运行覆盖）
 
-    output/中途预览.md
-        运行期间：每 N 秒刷新一次的"截至当前"目录（随时可打开）
-        跑完/中断：同一个文件被重写为最终版（标题变成 # 日记总结，并标记生成日期）
+    output/中途预览.md    ← 运行期间：每 N 秒刷新一次的"截至当前"目录（随时可打开）
+    output/日记总结.md    ← 跑完：上面那个文件**改名**而来（标题 # 日记总结 + 生成日期）
+                            中断时不改名，仍是 中途预览.md
 
 除此之外不再生成任何中间文件（无 summaries.json / progress.json / 运行状态.txt /
 待复核清单 / 日志文件）。断点续跑状态在 SQLite（entry_summaries 表），跨运行共享。
@@ -99,7 +99,7 @@ def build_parser() -> argparse.ArgumentParser:
     mode.add_argument("--models", action="store_true", help="列出 LM Studio 可见模型后退出（确认模型名）")
     mode.add_argument("--test", action="store_true", help="抽样试跑，只打印结果，不写状态与输出文件")
     mode.add_argument("--all", action="store_true", help="全量生成（可中断续跑）")
-    mode.add_argument("--rebuild-md", action="store_true", help="不调用模型，仅用已有摘要重写「中途预览.md」")
+    mode.add_argument("--rebuild-md", action="store_true", help="不调用模型，仅用已有摘要重写「日记总结.md」")
     mode.add_argument("--reset-summaries", action="store_true", help="只清空摘要相关表，不修改原始日记")
 
     parser.add_argument("--samples", type=int, default=10, help="--test 抽样条数（默认 10）")
@@ -129,7 +129,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--output-dir",
-        help="输出根目录（默认：项目根目录下的 output/）；「中途预览.md」直接写在这里",
+        help="输出根目录（默认：项目根目录下的 output/）；产物直接写在这里",
     )
     parser.add_argument(
         "--flat-output",
@@ -174,13 +174,16 @@ def build_parser() -> argparse.ArgumentParser:
 def build_run_paths(base_dir: Path, run_dir: Path) -> Dict[str, Path]:
     """本次运行的产物路径
 
-    只有一个产物：``run_dir/中途预览.md``（每次运行一个 YYMMDDHHMMSS 子目录，
-    历史互不覆盖）；断点续跑状态在 SQLite 的 ``entry_summaries`` 表里，跨运行共享。
+    * ``preview``：运行期的「中途预览.md」，每 N 秒刷新一次（跑完/中断时都写它）；
+    * ``final``：跑完后的「日记总结.md」，由 ``preview`` 改名而来（中断时不会有它）。
+
+    断点续跑状态在 SQLite 的 ``entry_summaries`` 表里，跨运行共享。
     """
     return {
         "base_dir": base_dir,
         "dir": run_dir,
-        "preview": run_dir / bs_config.PREVIEW_FILE_NAME,   # 唯一产物：运行期=快照，跑完=最终版
+        "preview": run_dir / bs_config.PREVIEW_FILE_NAME,
+        "final": run_dir / bs_config.FINAL_FILE_NAME,
     }
 
 
@@ -189,7 +192,7 @@ def resolve_paths(args, timestamped: bool = True) -> Dict[str, Path]:
 
     * 默认：``<输出根目录>/YYMMDDHHMMSS/``（每次运行一个子目录，历史互不覆盖）
     * ``--flat-output``：不建子目录，直接写输出根目录（旧行为）
-    * ``timestamped=False``（--models/--test 之类不写产物的动作）：只用根目录
+    * ``timestamped=False``：直接写在输出根目录（``--all`` 走这条，产物平铺）
     """
     base_dir = (
         Path(args.output_dir).expanduser().resolve() if args.output_dir else bs_config.OUTPUT_DIR
@@ -198,6 +201,23 @@ def resolve_paths(args, timestamped: bool = True) -> Dict[str, Path]:
     if not timestamped or getattr(args, "flat_output", False):
         return build_run_paths(base_dir, base_dir)
     return build_run_paths(base_dir, bs_config.new_run_dir(base_dir))
+
+
+def promote_to_final(paths: Dict[str, Path]) -> Optional[Path]:
+    """把运行期的「中途预览.md」改名成最终产物「日记总结.md」
+
+    只在整轮正常跑完时调用（``--all`` 正常结束、``--rebuild-md``）；中断时不调用——
+    那时的文件只是快照，仍叫「中途预览.md」。返回最终文件路径；没有产物时返回 None。
+    """
+    preview, final = paths.get("preview"), paths.get("final")
+    if not preview or not final or not preview.exists():
+        return None
+    try:
+        preview.replace(final)              # 同一目录内改名，覆盖上一次的最终版
+    except OSError as exc:                  # 目标被占用等：内容不丢，只是名字没换过来
+        logger.warning("最终产物改名失败（%s），内容仍在：%s", exc, preview)
+        return preview
+    return final
 
 
 def scope_label(years: Optional[Sequence[int]]) -> str:
@@ -1102,17 +1122,18 @@ def cmd_all(args, settings, paths: Dict[str, Path]) -> int:
         database_records = repository.all_records()
         records = [record for record in database_records if record.get("status") == "ok"]
 
-        reporter.set_phase("saving", "写「中途预览.md」（不调用模型）")
+        reporter.set_phase("saving", "写「日记总结.md」（不调用模型）")
 
         print_summary(records, stats)
         preview.finish(summary_state, processed=len(entries), total=len(entries), phase="done")
+        written = promote_to_final(paths) if preview.enabled else None
         final_run_status = "completed" if stats["completed"] else "failed"
         store.update_run(run_id, status=final_run_status, processed=len(entries),
                          generated=stats["ok"] + stats["empty"], reused=stats["skipped"],
                          failed=stats["failed"])
         reporter.set_phase("done")
-        if preview.enabled:
-            print(f"已写出: {paths['preview']}（含本次全部结果）")
+        if written:
+            print(f"已写出: {written}（含本次全部结果）")
         else:
             print("本次未写文件（--no-preview）：结果都在 SQLite 里，可用 --rebuild-md 重写")
         print(f"摘要主存储: {settings['db_path']}")
@@ -1122,7 +1143,7 @@ def cmd_all(args, settings, paths: Dict[str, Path]) -> int:
 
 
 def cmd_rebuild(args, settings, paths: Dict[str, Path]) -> int:
-    """--rebuild-md：不调用模型，用 SQLite 里已有的摘要重写「中途预览.md」"""
+    """--rebuild-md：不调用模型，用 SQLite 里已有的摘要重写「日记总结.md」"""
     state_mod.setup_logging(quiet=args.quiet)
     reporter = build_reporter(
         args, settings, [],
@@ -1154,13 +1175,14 @@ def cmd_rebuild(args, settings, paths: Dict[str, Path]) -> int:
             },
             note=f"从 SQLite 读入 {len(database_records)} 篇（不调用模型）",
         )
-        reporter.set_phase("saving", "写「中途预览.md」（不调用模型）")
+        reporter.set_phase("saving", "写「日记总结.md」（不调用模型）")
         paths["preview"].parent.mkdir(parents=True, exist_ok=True)
         paths["preview"].write_text(render.render_markdown(records), encoding="utf-8")
+        written = promote_to_final(paths)
 
         print_summary(records)
         reporter.set_phase("done")
-        print(f"已重新生成: {paths['preview']}（本次未调用模型）")
+        print(f"已重新生成: {written or paths['preview']}（本次未调用模型）")
         return EXIT_OK
     finally:
         reporter.stop()

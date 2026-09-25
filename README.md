@@ -11,7 +11,7 @@
 |------|----------|----------|
 | **核心**（项目根目录） | 日记导入、SQLite FTS5 全文检索、年度字数统计、数据库结构 | 本文件 |
 | **数据库查询指南** | 给本地小模型用的「自然语言 → SQL」提示词素材：表结构、易错点、可照抄的 SELECT 示例 | [`db_query_guide.md`](db_query_guide.md) |
-| **日记批量总结** | 用本地 LM Studio 模型为**每一篇**日记写摘要，生成按年份排列的《中途预览.md》（跑完即最终版并标记生成日期，输出到项目根目录 `output/`） | [`batch_summary/README.md`](batch_summary/README.md) |
+| **日记批量总结** | 用本地 LM Studio 模型为**每一篇**日记写摘要，生成按年份排列的《日记总结.md》（输出到项目根目录 `output/`，运行期间叫「中途预览.md」） | [`batch_summary/README.md`](batch_summary/README.md) |
 | **Web 浏览系统** | React + TypeScript 前端与 FastAPI 只读 API：浏览 / 搜索 / 摘要 / 回顾 | [`webapp-backend/README.md`](webapp-backend/README.md) |
 
 ## 功能特性
