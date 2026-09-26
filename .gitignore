@@ -56,6 +56,9 @@ webapp-frontend/vite.config.d.ts
 /output/
 batch_summary/output/
 
+# 日记导入日期检查报告（每次导入重新生成，含文件名 / 行号，不入库）
+/日记导入日期检查报告.md
+
 # OS
 .DS_Store
 Thumbs.db

@@ -3,8 +3,13 @@
 """
 日记数据库导入脚本 v2
 优化：智能文件分类、月份校验、同日合并、笔误检测、entry_type（普通日记统一为 diary）
+
+日期体检（2026-09 新增）：导入时会检查「2月30日」这类不存在的日期，以及
+「3月的日记放进 5月文件」这种月份 / 年份错放。发现问题**不会阻止正常日记入库**，
+只在控制台重点提示，并在项目根目录输出《日记导入日期检查报告.md》警报报告，供人工核对修正。
 """
 
+import calendar
 import os
 import re
 import sqlite3
@@ -28,12 +33,27 @@ if sys.platform == 'win32':
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+#: 日期检查报告的默认文件名（写在项目根目录，可被 DiaryImporter(report_path=...) 覆盖）
+DEFAULT_REPORT_NAME = "日记导入日期检查报告.md"
+
 
 
 class DiaryImporter:
-    def __init__(self, diary_root_path, db_path):
+    #: 内容里的日期标记写法（与 README 列出的格式一致）。
+    #: 只用来判断「一段文字像不像日期」，不判断合法性——
+    #: 这样 2月30日 这类不存在的日期也能被抓出来提示用户。
+    DATE_MARKER_PATTERNS = (
+        r'^(\d{2})(\d{2})(?:\s+(?:周|星期)[一二三四五六日天])?$',  # 0401 / 0401 周三
+        r'^(\d{1,2})_(\d{1,2})$',                                  # 01_01
+        r'^(\d{1,2})月(\d{1,2})日$',                                # 1月1日
+        r'^(\d{1,2})/(\d{1,2})$',                                   # 01/01
+    )
+
+    def __init__(self, diary_root_path, db_path, report_path=None):
         self.diary_root = Path(diary_root_path)
         self.db_path = db_path
+        #: 日期检查报告输出位置；None 表示默认写项目根目录的《日记导入日期检查报告.md》
+        self.report_path = Path(report_path) if report_path else None
         self.conn = None
         self.year_folders = sorted(
             path.name
@@ -46,8 +66,15 @@ class DiaryImporter:
         }
         # 收集所有条目，用于同日合并
         self.all_entries = {}  # key: date_str -> list of entries
-        # 警告收集
+        # 警告收集（普通提示，如「同日合并」，与日期无关）
         self.warnings = []
+        # 日期相关的普通提示（跨月溢出、文件内日期跳跃）；会进报告的「其他日期提示」
+        self.date_notes = []
+        # 重点提示：非法日期 / 月份错放 / 年份错放，很可能是写错，需要用户重点核对
+        self.critical_warnings = []
+        # 供日期检查报告使用的计数
+        self.scanned_files = 0
+        self.imported_entries = 0
 
     def connect_db(self):
         """连接数据库并创建表"""
@@ -133,36 +160,37 @@ class DiaryImporter:
                 return True
         return False
 
+    def extract_date_token(self, text):
+        """一段文字长得像日期标记时返回 (month, day)，否则返回 None。
+
+        与 parse_date_marker 共用 DATE_MARKER_PATTERNS，但**不做合法性判断**：
+        2月30日、13月1日 这类不存在的日期也会被识别出来，交给调用方提示用户。
+        """
+        text = text.strip()
+        for pattern in self.DATE_MARKER_PATTERNS:
+            match = re.match(pattern, text)
+            if match:
+                return int(match.group(1)), int(match.group(2))
+        return None
+
     def parse_date_marker(self, line, year):
         """
         解析内容中的日期标记行。
         支持格式：0101, 01_01, 1月1日, 01/01
         返回 date 对象或 None
         """
-        line = line.strip()
-        if not line:
+        token = self.extract_date_token(line)
+        if not token:
             return None
 
-        patterns = [
-            # 0401 或 0401 周日 / 0401 星期三（整月合集常带星期后缀）
-            (r'^(\d{2})(\d{2})(?:\s+(?:周|星期)[一二三四五六日天])?$', None),
-            (r'^(\d{1,2})_(\d{1,2})$', None),   # 01_01
-            (r'^(\d{1,2})月(\d{1,2})日$', None), # 1月1日
-            (r'^(\d{1,2})/(\d{1,2})$', None),   # 01/01
-        ]
-
-        for pattern, _ in patterns:
-            match = re.match(pattern, line)
-            if match:
-                month, day = int(match.group(1)), int(match.group(2))
-                # 月份范围校验
-                if not (1 <= month <= 12 and 1 <= day <= 31):
-                    return None
-                try:
-                    return date(int(year), month, day)
-                except ValueError:
-                    return None
-        return None
+        month, day = token
+        # 月份范围校验
+        if not (1 <= month <= 12 and 1 <= day <= 31):
+            return None
+        try:
+            return date(int(year), month, day)
+        except ValueError:
+            return None
 
     def count_date_markers(self, content, year):
         """统计内容中有多少个有效日期标记"""
@@ -172,6 +200,110 @@ class DiaryImporter:
             if line and self.parse_date_marker(line, year):
                 count += 1
         return count
+
+    @staticmethod
+    def _month_gap(a, b):
+        """两个月份之间的真实间隔（12月↔1月 视为相邻，间隔 1）"""
+        gap = abs(a - b)
+        return min(gap, 12 - gap)
+
+    @staticmethod
+    def _is_valid_date(year, month, day):
+        try:
+            date(int(year), month, day)
+            return True
+        except ValueError:
+            return False
+
+    @staticmethod
+    def _date_reason(year, month, day):
+        """给「这个日期不存在」补一句人话原因，例如 2月最多 28/29 日"""
+        if not (1 <= month <= 12):
+            return f"{month}月不存在"
+        last_day = calendar.monthrange(int(year), month)[1]
+        return f"{year}年{month}月没有{day}日（该月最多{last_day}日）"
+
+    def _expected_month_from_filename(self, filename):
+        """从文件名推断这篇日记「应该」属于几月：05月.txt → 5，05_03.txt → 5，否则 None"""
+        match = re.match(r'^(\d{1,2})月', filename)
+        if match and 1 <= int(match.group(1)) <= 12:
+            return int(match.group(1))
+        match = re.match(r'^(\d{1,2})_(\d{1,2})', filename)
+        if match and 1 <= int(match.group(1)) <= 12:
+            return int(match.group(1))
+        return None
+
+    def record_critical(self, message):
+        """记录一条「很可能是写错了」的重点提示（控制台高亮 + 写进日期检查报告）"""
+        self.critical_warnings.append(message)
+        logger.error(message)
+
+    def check_file_dates(self, file_path, year, content, relative_path):
+        """对单个文件做日期体检：非法日期、月份错放、年份错放。
+
+        只记录提示，**不改变解析结果**：正常日记照常入库，
+        可疑的日期标记本来就解析不出来（维持原有行为），交给用户人工核对。
+        """
+        filename = file_path.name
+
+        # 1) 文件名里的日期是否合法：02_30.txt 这种
+        for pattern in (r'^(\d{1,2})_(\d{1,2})\.txt$',
+                        r'^(\d{1,2})_(\d{1,2})\s',
+                        r'^(\d{1,2})_(\d{1,2})_'):
+            match = re.match(pattern, filename)
+            if match:
+                month, day = int(match.group(1)), int(match.group(2))
+                if not self._is_valid_date(year, month, day):
+                    self.record_critical(
+                        f"[非法日期·文件名] {relative_path}：文件名里的 {month}月{day}日 "
+                        f"不存在（{self._date_reason(year, month, day)}），这篇会落到兜底日期"
+                    )
+                break
+
+        # 2) 文件名内嵌年份 ≠ 所在年份文件夹
+        year_match = re.search(r'(?:19|20)\d{2}', filename)
+        if year_match and int(year_match.group(0)) != int(year):
+            self.record_critical(
+                f"[年份错放] {relative_path}：文件名写着 {year_match.group(0)} 年，"
+                f"文件却放在 {year} 文件夹里，很可能是放错了"
+            )
+
+        # 3) 逐行检查内容里的日期标记
+        expected_month = self._expected_month_from_filename(filename)
+        for line_no, line in enumerate(content.split('\n'), 1):
+            token = self.extract_date_token(line)
+            if not token:
+                continue
+            stripped = line.strip()
+            # 纯 4 位「年份」行（如线下活动文件里的「2024」「2027」小标题）不是日期，跳过
+            if re.fullmatch(r'(?:19|20)\d{2}', stripped):
+                continue
+            month, day = token
+            if not (1 <= month <= 12 and 1 <= day <= 31):
+                self.record_critical(
+                    f"[非法日期] {relative_path} 第{line_no}行「{stripped}」："
+                    f"解析成 {month}月{day}日，月份或日期超出范围，很可能是写错了"
+                )
+                continue
+            if not self._is_valid_date(year, month, day):
+                self.record_critical(
+                    f"[非法日期] {relative_path} 第{line_no}行「{stripped}」："
+                    f"{self._date_reason(year, month, day)}，这个日期不存在，很可能是写错了"
+                )
+                continue
+            if expected_month is None or month == expected_month:
+                continue
+            if self._month_gap(month, expected_month) >= 2:
+                self.record_critical(
+                    f"[月份错放] {relative_path} 第{line_no}行「{stripped}」："
+                    f"{month}月的日记却出现在「{filename}」（应为 {expected_month}月）里，"
+                    f"很可能是写错月份或放错了文件"
+                )
+            else:
+                self.date_notes.append(
+                    f"ℹ️ 跨月溢出: {relative_path} 第{line_no}行「{stripped}」"
+                    f"与文件名月份 {expected_month}月 相差 1 个月（可能是月初/月末顺带记录）"
+                )
 
     def split_multi_day_content(self, content, year, file_source=""):
         """分割多日合一文件的内容，带笔误检测"""
@@ -203,7 +335,7 @@ class DiaryImporter:
                 if prev_month is not None and entry_date.month != prev_month:
                     # 允许相邻月份（如1月文件包含到2月初）
                     if abs(entry_date.month - prev_month) > 2 and not (prev_month == 12 and entry_date.month <= 2):
-                        self.warnings.append(
+                        self.date_notes.append(
                             f"⚠️ 日期跳跃警告: {file_source} 中出现 {entry_date.strftime('%m/%d')}，"
                             f"前一条目是{prev_month}月，可能是笔误"
                         )
@@ -297,6 +429,8 @@ class DiaryImporter:
 
             filename = file_path.name
             relative_path = str(file_path.relative_to(self.diary_root))
+            # 日期体检：非法日期 / 月份错放 / 年份错放（只记录提示，不影响入库）
+            self.check_file_dates(file_path, year, content, relative_path)
             file_type = self.classify_file(file_path, year, content)
 
             entries = []
@@ -472,16 +606,32 @@ class DiaryImporter:
             self.conn.commit()
             self.update_stats()
 
+            self.scanned_files = total_files
+            self.imported_entries = total_entries
+
             logger.info(f"导入完成! 处理 {total_files} 个文件，导入 {total_entries} 条日记")
 
-            # 输出警告
-            if self.warnings:
+            # 重点提示：很可能是写错了，放在最显眼的位置
+            if self.critical_warnings:
+                print("\n" + "#" * 68)
+                print("❗❗ 重点提示：下面这些都像是写错了，请逐条核对 ❗❗")
+                print("#" * 68)
+                for w in self.critical_warnings:
+                    print(w)
+                print("#" * 68)
+
+            # 输出警告（日期提示 + 其它普通提示）
+            notes = self.date_notes + self.warnings
+            if notes:
                 print("\n" + "=" * 60)
                 print("⚠️  警告和提示")
                 print("=" * 60)
-                for w in self.warnings:
+                for w in notes:
                     print(w)
                 print("=" * 60)
+
+            report_path = self.write_date_report()
+            print(f"\n📄 日期检查报告: {report_path}")
 
             self.show_stats()
             return True
@@ -494,6 +644,44 @@ class DiaryImporter:
             return False
         finally:
             self.close_db()
+
+    def write_date_report(self, report_path=None):
+        """把本次导入的日期体检结果写成 Markdown 报告。
+
+        默认写到项目根目录的《日记导入日期检查报告.md》（也可在构造 DiaryImporter
+        时指定 ``report_path`` 覆盖）。无论有没有问题都会生成，方便每次导入留档。
+        """
+        target = Path(report_path) if report_path else (self.report_path or ROOT_DIR / DEFAULT_REPORT_NAME)
+        lines = [
+            "# 日记导入日期检查报告",
+            "",
+            f"- 生成时间：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            f"- 日记根目录：{self.diary_root}",
+            f"- 扫描文件：{self.scanned_files} 个，入库条目：{self.imported_entries} 条",
+            "",
+        ]
+
+        if self.critical_warnings:
+            lines.append(f"## ❗ 重点提示（很可能是写错了，请逐条核对，共 {len(self.critical_warnings)} 条）")
+            lines.append("")
+            lines += [f"{index}. {w}" for index, w in enumerate(self.critical_warnings, 1)]
+            lines.append("")
+        else:
+            lines += ["## ✅ 未发现非法日期或月份 / 年份错放", ""]
+
+        if self.date_notes:
+            lines.append(f"## ℹ️ 其他日期提示（共 {len(self.date_notes)} 条）")
+            lines.append("")
+            lines += [f"- {w}" for w in self.date_notes]
+            lines.append("")
+
+        if self.warnings:
+            # 同日合并等与日期无关的导入提示，只给个指引，避免报告被刷屏
+            lines.append(f"> 另有 {len(self.warnings)} 条与日期无关的导入提示（如同日合并），见控制台输出。")
+            lines.append("")
+
+        target.write_text("\n".join(lines), encoding="utf-8")
+        return target
 
     def show_stats(self):
         try:
